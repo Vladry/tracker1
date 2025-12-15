@@ -1,11 +1,9 @@
 #include "tracker/tracker_manager.h"
 #include <algorithm>
+#include <cmath>
 
-static cv::Rect clampRect(const cv::Rect& r, int w, int h) {
-    return r & cv::Rect(0, 0, w, h);
-}
-
-TrackerManager::TrackerManager(const Config& cfg) : cfg_(cfg) {}
+TrackerManager::TrackerManager(const Config& cfg)
+        : cfg_(cfg) {}
 
 void TrackerManager::reset() {
     tracks_.clear();
@@ -14,164 +12,197 @@ void TrackerManager::reset() {
 }
 
 float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
-    float inter = (a & b).area();
-    float uni = a.area() + b.area() - inter;
-    if (uni <= 0.0f) return 0.0f;
-    return inter / uni;
+    cv::Rect2f inter = a & b;
+    float ia = inter.area();
+    if (ia <= 0.f) return 0.f;
+    float ua = a.area() + b.area() - ia;
+    return ua > 0.f ? ia / ua : 0.f;
 }
 
-bool TrackerManager::extractTemplate(const cv::Mat& frame_bgr,
-                                     const cv::Rect2f& bbox,
-                                     cv::Mat& out_tmpl) const
-{
-    if (frame_bgr.empty()) return false;
+cv::KalmanFilter TrackerManager::makeKalman(float cx, float cy) const {
+    cv::KalmanFilter kf(4, 2, 0, CV_32F);
 
-    cv::Rect r(
-            (int)bbox.x,
-            (int)bbox.y,
-            (int)bbox.width,
-            (int)bbox.height
+    kf.transitionMatrix = (cv::Mat_<float>(4,4) <<
+                                                1,0,1,0,
+            0,1,0,1,
+            0,0,1,0,
+            0,0,0,1
     );
 
-    r = clampRect(r, frame_bgr.cols, frame_bgr.rows);
-    if (r.area() < cfg_.min_template_area_px) return false;
-
-    cv::Mat roi = frame_bgr(r);
-    if (roi.empty()) return false;
-
-    cv::Mat gray;
-    cv::cvtColor(roi, gray, cv::COLOR_BGR2GRAY);
-    cv::resize(gray, out_tmpl,
-               cv::Size(cfg_.tmpl_patch_w, cfg_.tmpl_patch_h),
-               0, 0, cv::INTER_AREA);
-
-    return !out_tmpl.empty();
-}
-
-void TrackerManager::updateTemplate(Track& tr, const cv::Mat& new_tmpl) const {
-    if (new_tmpl.empty()) return;
-
-    if (tr.tmpl_gray.empty()) {
-        tr.tmpl_gray = new_tmpl.clone();
-        return;
-    }
-
-    float a = std::clamp(cfg_.tmpl_update_alpha, 0.0f, 1.0f);
-
-    cv::Mat ref_f, cur_f;
-    tr.tmpl_gray.convertTo(ref_f, CV_32F);
-    new_tmpl.convertTo(cur_f, CV_32F);
-
-    cv::Mat blended = (1.0f - a) * ref_f + a * cur_f;
-    blended.convertTo(tr.tmpl_gray, CV_8U);
-}
-
-bool TrackerManager::templateTrackOne(const cv::Mat& frame_bgr, Track& tr) const {
-    if (!cfg_.enable_template_tracking) return false;
-    if (tr.tmpl_gray.empty()) return false;
-
-    const cv::Rect2f& b = tr.bbox;
-
-    cv::Rect search(
-            (int)b.x - cfg_.tmpl_search_px,
-            (int)b.y - cfg_.tmpl_search_px,
-            (int)b.width  + 2 * cfg_.tmpl_search_px,
-            (int)b.height + 2 * cfg_.tmpl_search_px
+    kf.measurementMatrix = (cv::Mat_<float>(2,4) <<
+                                                 1,0,0,0,
+            0,1,0,0
     );
 
-    search = clampRect(search, frame_bgr.cols, frame_bgr.rows);
-    if (search.width < cfg_.tmpl_patch_w || search.height < cfg_.tmpl_patch_h)
-        return false;
+    kf.statePost = (cv::Mat_<float>(4,1) << cx, cy, 0.f, 0.f);
 
-    cv::Mat gray;
-    cv::cvtColor(frame_bgr(search), gray, cv::COLOR_BGR2GRAY);
+    cv::setIdentity(kf.processNoiseCov, cv::Scalar::all(cfg_.kalman_process_noise));
+    cv::setIdentity(kf.measurementNoiseCov, cv::Scalar::all(cfg_.kalman_meas_noise));
+    cv::setIdentity(kf.errorCovPost, cv::Scalar::all(1));
 
-    cv::Mat result;
-    cv::matchTemplate(gray, tr.tmpl_gray, result, cv::TM_CCOEFF_NORMED);
-
-    double minVal, maxVal;
-    cv::Point maxLoc;
-    cv::minMaxLoc(result, &minVal, &maxVal, nullptr, &maxLoc);
-
-    if (maxVal < cfg_.tmpl_min_score) return false;
-
-    tr.bbox.x = (float)(search.x + maxLoc.x);
-    tr.bbox.y = (float)(search.y + maxLoc.y);
-
-    cv::Mat new_tmpl;
-    if (extractTemplate(frame_bgr, tr.bbox, new_tmpl)) {
-        updateTemplate(tr, new_tmpl);
-    }
-
-    return true;
+    return kf;
 }
 
-bool TrackerManager::overlapsExisting(const cv::Rect2f& det) const {
-    for (const auto& tr : tracks_) {
-        if (iou(tr.bbox, det) >= cfg_.seed_overlap_iou)
-            return true;
-    }
-    return false;
+float TrackerManager::speedPx(const Track& t) const {
+    if (!t.kf_initialized) return 0.f;
+    float vx = t.kf.statePost.at<float>(2);
+    float vy = t.kf.statePost.at<float>(3);
+    return std::sqrt(vx*vx + vy*vy);
 }
 
-std::vector<Target> TrackerManager::update(const cv::Mat& frame_bgr,
-                                           const std::vector<cv::Rect2f>& new_detections)
+std::vector<Target> TrackerManager::update(
+        const cv::Mat&,
+        const std::vector<cv::Rect2f>& detections)
 {
     const auto now = std::chrono::steady_clock::now();
 
-    // 1) Follow existing tracks
-    for (auto& tr : tracks_) {
-        if (templateTrackOne(frame_bgr, tr)) {
-            tr.last_seen = now;
-            tr.hits++;
-            if (!tr.confirmed && tr.hits >= cfg_.confirm_hits)
-                tr.confirmed = true;
+    // 1. Predict (Kalman, но НЕ двигаем bbox если цель стоит)
+    if (cfg_.use_kalman) {
+        for (auto& t : tracks_) {
+            if (!t.kf_initialized) continue;
+
+            cv::Mat p = t.kf.predict();
+            if (speedPx(t) >= cfg_.stationary_speed_px) {
+                float px = p.at<float>(0);
+                float py = p.at<float>(1);
+                t.bbox.x = px - t.bbox.width  * 0.5f;
+                t.bbox.y = py - t.bbox.height * 0.5f;
+            } else {
+                t.kf.statePost.at<float>(2) = 0.f;
+                t.kf.statePost.at<float>(3) = 0.f;
+                t.kf.statePre = t.kf.statePost.clone();
+            }
         }
     }
 
-    // 2) Seed new tracks (detector role)
-    for (const auto& d : new_detections) {
-        if ((int)tracks_.size() >= cfg_.max_targets) break;
-        if (overlapsExisting(d)) continue;
+    // 2. Ассоциация det -> track
+    std::vector<int> det_to_track(detections.size(), -1);
 
-        Track tr;
-        tr.id = next_id_++;
-        tr.bbox = d;
-        tr.hits = 1;
-        tr.confirmed = (tr.hits >= cfg_.confirm_hits);
-        tr.last_seen = now;
+    for (size_t ti = 0; ti < tracks_.size(); ++ti) {
+        float best_iou = 0.f;
+        int best_di = -1;
 
-        extractTemplate(frame_bgr, tr.bbox, tr.tmpl_gray);
-        tracks_.push_back(std::move(tr));
+        for (size_t di = 0; di < detections.size(); ++di) {
+            if (det_to_track[di] != -1) continue;
+            float v = iou(tracks_[ti].bbox, detections[di]);
+            if (v > best_iou) {
+                best_iou = v;
+                best_di = (int)di;
+            }
+        }
+
+        if (best_di >= 0 && best_iou >= cfg_.assoc_iou_threshold) {
+            det_to_track[(size_t)best_di] = (int)ti;
+        }
     }
 
-    // 3) Delete only by timeout
-    const auto timeout = std::chrono::duration<double>(cfg_.occlusion_timeout_sec);
+    // 3. Обновление треков по детекциям
+    for (size_t di = 0; di < detections.size(); ++di) {
+        int ti = det_to_track[di];
+        if (ti < 0) continue;
+
+        auto& t = tracks_[(size_t)ti];
+        const auto& d = detections[di];
+
+        t.bbox = d;
+        t.last_seen = now;
+        t.hits++;
+
+        float cx = d.x + d.width  * 0.5f;
+        float cy = d.y + d.height * 0.5f;
+
+        if (cfg_.use_kalman) {
+            if (!t.kf_initialized) {
+                t.kf = makeKalman(cx, cy);
+                t.kf_initialized = true;
+            } else {
+                cv::Mat m = (cv::Mat_<float>(2,1) << cx, cy);
+                t.kf.correct(m);
+
+                float fx = t.kf.statePost.at<float>(0);
+                float fy = t.kf.statePost.at<float>(1);
+                t.bbox.x = fx - t.bbox.width  * 0.5f;
+                t.bbox.y = fy - t.bbox.height * 0.5f;
+            }
+
+            if (speedPx(t) < cfg_.stationary_speed_px) {
+                t.kf.statePost.at<float>(2) = 0.f;
+                t.kf.statePost.at<float>(3) = 0.f;
+                t.kf.statePre = t.kf.statePost.clone();
+            }
+        }
+    }
+
+    // 4. Spawn новых треков
+    for (size_t di = 0; di < detections.size(); ++di) {
+        if (det_to_track[di] != -1) continue;
+        if ((int)tracks_.size() >= cfg_.max_targets) break;
+
+        const auto& d = detections[di];
+        bool block = false;
+
+        for (const auto& t : tracks_) {
+            double age = std::chrono::duration<double>(now - t.last_seen).count();
+            if (age > cfg_.occlusion_timeout_sec * 0.5) continue;
+            if (iou(t.bbox, d) >= cfg_.spawn_block_iou) {
+                block = true;
+                break;
+            }
+        }
+        if (block) continue;
+
+        Track t;
+        t.id = next_id_++;
+        t.bbox = d;
+        t.hits = 1;
+        t.confirmed = (t.hits >= cfg_.confirm_hits);
+        t.last_seen = now;
+
+        if (cfg_.use_kalman) {
+            float cx = d.x + d.width  * 0.5f;
+            float cy = d.y + d.height * 0.5f;
+            t.kf = makeKalman(cx, cy);
+            t.kf_initialized = true;
+        }
+
+        tracks_.push_back(std::move(t));
+    }
+
+    // 5. Удаление треков
     tracks_.erase(
             std::remove_if(tracks_.begin(), tracks_.end(),
-                           [&](const Track& tr){
-                               return (now - tr.last_seen) > timeout;
+                           [&](const Track& t){
+                               double age = std::chrono::duration<double>(now - t.last_seen).count();
+                               if (cfg_.use_kalman)
+                                   return age > cfg_.occlusion_timeout_sec;
+                               return age > cfg_.stationary_hold_sec;
                            }),
             tracks_.end()
     );
 
-    // 4) Build targets
     rebuildTargets();
     return targets_;
 }
 
 void TrackerManager::rebuildTargets() {
     targets_.clear();
-    for (const auto& tr : tracks_) {
-        Target t;
-        t.id = tr.id;
-        t.target_name = "T" + std::to_string(tr.id);
-        t.bbox = tr.bbox;
-        t.age_frames = tr.hits;
-        t.missed_frames = 0;
-        t.speedX_mps = 0.0f;
-        t.speedY_mps = 0.0f;
-        targets_.push_back(std::move(t));
+    for (const auto& t : tracks_) {
+        Target tg;
+        tg.id = t.id;
+        tg.target_name = "T" + std::to_string(t.id);
+        tg.bbox = t.bbox;
+        tg.age_frames = t.hits;
+        tg.missed_frames = 0;
+
+        if (cfg_.use_kalman && t.kf_initialized) {
+            tg.speedX_mps = t.kf.statePost.at<float>(2);
+            tg.speedY_mps = t.kf.statePost.at<float>(3);
+        } else {
+            tg.speedX_mps = 0.f;
+            tg.speedY_mps = 0.f;
+        }
+
+        targets_.push_back(std::move(tg));
     }
 }
 
