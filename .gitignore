@@ -1,0 +1,20 @@
+#build
+cmake-build-*/
+build
+описан*
+
+#IDE
+.idea
+*.iml
+
+#runtime
+*.log
+*.tmp
+
+# binaries
+*.o
+*.a
+*.so
+*.so.*
+*.exe
+
