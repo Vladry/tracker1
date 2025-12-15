@@ -1,31 +1,19 @@
 #include "tracker/tracker_manager.h"
-#include "util/rect_utils.h"
 #include <algorithm>
 #include <cmath>
 
-TrackerManager::TrackerManager(const Config& cfg) : cfg_(cfg) {}
-
-void TrackerManager::reset() {
-    tracks_.clear();
-    targets_.clear();
-    next_id_ = 1;
-}
-
 cv::KalmanFilter TrackerManager::makeKF(float px, float py, float vx, float vy,
-                                        float process_noise, float meas_noise)
-{
+                                        float process_noise, float meas_noise) {
     cv::KalmanFilter kf(4, 2, 0, CV_32F);
-
-    // state: [x, y, vx, vy]
     kf.transitionMatrix = (cv::Mat_<float>(4,4) <<
-        1,0,1,0,
-        0,1,0,1,
-        0,0,1,0,
-        0,0,0,1
+                                                1,0,1,0,
+            0,1,0,1,
+            0,0,1,0,
+            0,0,0,1
     );
     kf.measurementMatrix = (cv::Mat_<float>(2,4) <<
-        1,0,0,0,
-        0,1,0,0
+                                                 1,0,0,0,
+            0,1,0,0
     );
 
     kf.statePre.at<float>(0) = px;
@@ -37,65 +25,189 @@ cv::KalmanFilter TrackerManager::makeKF(float px, float py, float vx, float vy,
     cv::setIdentity(kf.processNoiseCov, cv::Scalar::all(process_noise));
     cv::setIdentity(kf.measurementNoiseCov, cv::Scalar::all(meas_noise));
     cv::setIdentity(kf.errorCovPost, cv::Scalar::all(1));
-
     return kf;
 }
 
-float TrackerManager::trackSpeedPxPerFrame(const TrackKF& t) {
-    float vx = t.kf.statePost.at<float>(2);
-    float vy = t.kf.statePost.at<float>(3);
-    return std::sqrt(vx*vx + vy*vy);
+TrackerManager::TrackerManager(const Config& cfg) : cfg_(cfg) {}
+
+void TrackerManager::reset() {
+    tracks_.clear();
+    targets_.clear();
+    next_id_ = 1;
 }
 
-void TrackerManager::associateGreedy(const std::vector<cv::Rect2f>& detections,
-                                     std::vector<int>& det_to_track)
-{
-    det_to_track.assign(detections.size(), -1);
-    if (detections.empty() || tracks_.empty()) return;
+float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
+    float inter = (a & b).area();
+    float uni = a.area() + b.area() - inter;
+    if (uni <= 0.f) return 0.f;
+    return inter / uni;
+}
 
-    std::vector<bool> track_used(tracks_.size(), false);
+static cv::Rect clampToFrame(const cv::Rect& r, int w, int h) {
+    cv::Rect frame(0,0,w,h);
+    return r & frame;
+}
 
-    // For each track, pick best detection (greedy).
+bool TrackerManager::extractAppearanceRef(const cv::Mat& frame_bgr,
+                                          const cv::Rect2f& bbox,
+                                          cv::Mat& out_ref) const {
+    if (frame_bgr.empty()) return false;
+
+    cv::Rect r((int)std::floor(bbox.x),
+               (int)std::floor(bbox.y),
+               (int)std::ceil(bbox.width),
+               (int)std::ceil(bbox.height));
+
+    r = clampToFrame(r, frame_bgr.cols, frame_bgr.rows);
+    if (r.area() < cfg_.min_presence_area_px) return false;
+
+    cv::Mat roi = frame_bgr(r);
+    if (roi.empty()) return false;
+
+    cv::Mat gray;
+    cv::cvtColor(roi, gray, cv::COLOR_BGR2GRAY);
+
+    cv::Mat small;
+    cv::resize(gray, small, cv::Size(cfg_.appearance_patch_w, cfg_.appearance_patch_h), 0, 0, cv::INTER_AREA);
+
+    out_ref = small;
+    return !out_ref.empty();
+}
+
+bool TrackerManager::appearanceMatches(const cv::Mat& frame_bgr, const TrackKF& t) const {
+    if (!t.appearance_valid) return false;
+
+    cv::Mat cur;
+    if (!extractAppearanceRef(frame_bgr, t.bbox, cur)) return false;
+
+    // Mean L1 per pixel (0..255)
+    double l1 = cv::norm(cur, t.appearance_ref, cv::NORM_L1);
+    double mean_l1 = l1 / (double)cur.total();
+
+    return (mean_l1 <= (double)cfg_.appearance_l1_thresh);
+}
+
+void TrackerManager::updateAppearanceRef(const cv::Mat& frame_bgr, TrackKF& t) const {
+    cv::Mat cur;
+    if (!extractAppearanceRef(frame_bgr, t.bbox, cur)) return;
+
+    if (!t.appearance_valid) {
+        t.appearance_ref = cur;
+        t.appearance_valid = true;
+        return;
+    }
+
+    // Exponential moving average in float, then back to 8-bit
+    const float a = std::min(1.0f, std::max(0.0f, cfg_.appearance_update_alpha));
+    cv::Mat ref_f, cur_f, out_f;
+    t.appearance_ref.convertTo(ref_f, CV_32F);
+    cur.convertTo(cur_f, CV_32F);
+    out_f = (1.0f - a) * ref_f + a * cur_f;
+    out_f.convertTo(t.appearance_ref, CV_8U);
+}
+
+std::vector<Target> TrackerManager::update(const cv::Mat& frame_bgr,
+                                           const std::vector<cv::Rect2f>& detections) {
+    // 1) Predict all tracks
+    for (auto& t : tracks_) {
+        cv::Mat p = t.kf.predict();
+        float cx = p.at<float>(0);
+        float cy = p.at<float>(1);
+
+        // Limit prediction drift (pixels per frame)
+        constexpr float MAX_PREDICT_STEP = 20.0f;
+
+        float px = t.kf.statePost.at<float>(0);
+        float py = t.kf.statePost.at<float>(1);
+
+        float dx = cx - px;
+        float dy = cy - py;
+
+        float d = std::sqrt(dx*dx + dy*dy);
+        if (d > MAX_PREDICT_STEP) {
+            float s = MAX_PREDICT_STEP / d;
+            cx = px + dx * s;
+            cy = py + dy * s;
+            t.kf.statePre.at<float>(0) = cx;
+            t.kf.statePre.at<float>(1) = cy;
+        }
+
+
+        t.bbox.x = cx - t.bbox.width * 0.5f;
+        t.bbox.y = cy - t.bbox.height * 0.5f;
+
+        t.age++;
+        t.missed++;
+    }
+
+    // 2) Associate detections -> tracks (greedy by IOU)
+    std::vector<int> det_assigned(detections.size(), -1);
+
     for (size_t ti = 0; ti < tracks_.size(); ++ti) {
-        float best_score = -1.0f;
+        float best = 0.f;
         int best_di = -1;
 
         for (size_t di = 0; di < detections.size(); ++di) {
-            if (det_to_track[di] != -1) continue;
+            if (det_assigned[di] != -1) continue;
 
-            float iou_v = util::iou(tracks_[ti].bbox, detections[di]);
-            float dist  = util::centerDistance(tracks_[ti].bbox, detections[di]);
-
-            bool pass_gate = (iou_v >= cfg_.match_iou_threshold) ||
-                             ((iou_v >= cfg_.assoc_iou_min) && (dist <= cfg_.assoc_dist_max_px));
-
-            if (!pass_gate) continue;
-
-            float dist_score = 0.0f;
-            if (cfg_.assoc_dist_max_px > 1e-3f) {
-                dist_score = 1.0f - std::min(1.0f, dist / cfg_.assoc_dist_max_px);
-            }
-            float score = cfg_.score_iou_w * iou_v + cfg_.score_dist_w * dist_score;
-
-            if (score > best_score) {
-                best_score = score;
+            float v = iou(tracks_[ti].bbox, detections[di]);
+            if (v > best) {
+                best = v;
                 best_di = (int)di;
             }
         }
 
-        if (best_di != -1) {
-            det_to_track[best_di] = (int)ti;
-            track_used[ti] = true;
+        if (best_di != -1 && best >= cfg_.iou_threshold) {
+            det_assigned[best_di] = (int)ti;
+
+            const auto& d = detections[best_di];
+            float mx = d.x + d.width * 0.5f;
+            float my = d.y + d.height * 0.5f;
+
+            cv::Mat m(2,1,CV_32F);
+            m.at<float>(0) = mx;
+            m.at<float>(1) = my;
+
+            tracks_[ti].kf.correct(m);
+            tracks_[ti].bbox = d;
+
+            tracks_[ti].missed = 0;
+            tracks_[ti].hits++;
+
+            if (!tracks_[ti].confirmed && tracks_[ti].hits >= cfg_.confirm_hits) {
+                tracks_[ti].confirmed = true;
+                // Initialize appearance reference as soon as track becomes confirmed
+                updateAppearanceRef(frame_bgr, tracks_[ti]);
+            } else if (tracks_[ti].confirmed) {
+                // keep adapting reference on real matches
+                updateAppearanceRef(frame_bgr, tracks_[ti]);
+            }
         }
     }
-}
 
-void TrackerManager::spawnNewTracks(const std::vector<cv::Rect2f>& detections,
-                                    const std::vector<int>& det_to_track)
-{
-    // spawn from unmatched detections, prefer larger boxes (already sorted in main after merge)
+    // 3) Presence confirmation when detector is silent (critical fix)
+    // If there are no detections, we try to confirm that confirmed tracks are still visible.
+    if (detections.empty() && !frame_bgr.empty()) {
+        for (auto& t : tracks_) {
+            if (!t.confirmed) continue;
+
+            if (appearanceMatches(frame_bgr, t)) {
+                t.missed = 0;
+
+                // CRITICAL: object is stationary -> kill velocity
+                t.kf.statePost.at<float>(2) = 0.0f; // vx
+                t.kf.statePost.at<float>(3) = 0.0f; // vy
+                t.kf.statePre  = t.kf.statePost.clone();
+
+                updateAppearanceRef(frame_bgr, t);
+            }
+
+        }
+    }
+
+    // 4) Spawn new tracks for unassigned detections (respect max_targets)
     for (size_t di = 0; di < detections.size(); ++di) {
-        if (det_to_track[di] != -1) continue;
+        if (det_assigned[di] != -1) continue;
         if ((int)tracks_.size() >= cfg_.max_targets) break;
 
         const auto& d = detections[di];
@@ -104,99 +216,37 @@ void TrackerManager::spawnNewTracks(const std::vector<cv::Rect2f>& detections,
 
         TrackKF t;
         t.id = next_id_++;
-        t.kf = makeKF(mx, my, 0.0f, 0.0f, cfg_.process_noise, cfg_.meas_noise);
+        t.kf = makeKF(mx, my, 0.f, 0.f, cfg_.process_noise, cfg_.meas_noise);
         t.bbox = d;
         t.age = 0;
         t.missed = 0;
         t.hits = 1;
         t.confirmed = (t.hits >= cfg_.confirm_hits);
 
+        // capture appearance early (even if not confirmed yet), harmless and helps fast lock
+        updateAppearanceRef(frame_bgr, t);
+
         tracks_.push_back(std::move(t));
     }
+
+    // 5) Prune tracks
+    // - Unconfirmed: delete by max_missed_frames
+    // - Confirmed: allow stationary_grace_frames more, because detector may output nothing
+    tracks_.erase(
+            std::remove_if(tracks_.begin(), tracks_.end(), [&](const TrackKF& t) {
+                int limit = cfg_.max_missed_frames;
+                if (t.confirmed) limit += cfg_.stationary_grace_frames;
+                return t.missed > limit;
+            }),
+            tracks_.end()
+    );
+
+    // 6) Export targets
+    rebuildTargets();
+    return targets_;
 }
 
-bool TrackerManager::shouldDelete(const TrackKF& t) const {
-    // Unconfirmed tracks are more aggressively deleted (reduce clutter).
-    int base = cfg_.max_missed_frames;
-    int allowed = base;
-
-    if (!t.confirmed) {
-        allowed = std::max(2, base / 3);
-        return t.missed > allowed;
-    }
-
-    // Confirmed tracks: if target is stationary (KF velocity small),
-    // allow longer grace time to prevent disappearance when motion-detector stops producing detections.
-    float sp = trackSpeedPxPerFrame(t);
-    if (sp <= cfg_.stationary_speed_thresh) {
-        allowed = std::max(base, cfg_.stationary_grace_frames);
-    }
-
-    return t.missed > allowed;
-}
-
-std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detections)
-{
-    // 1) Predict
-    for (auto& t : tracks_) {
-        cv::Mat p = t.kf.predict();
-        float cx = p.at<float>(0);
-        float cy = p.at<float>(1);
-
-        // keep last known size; update position from predicted center
-        t.bbox.x = cx - t.bbox.width  * 0.5f;
-        t.bbox.y = cy - t.bbox.height * 0.5f;
-
-        t.age++;
-        t.missed++;
-    }
-
-    // 2) Associate (greedy)
-    std::vector<int> det_to_track;
-    associateGreedy(detections, det_to_track);
-
-    // 3) Correct matches
-    for (size_t di = 0; di < detections.size(); ++di) {
-        int ti = det_to_track[di];
-        if (ti < 0 || ti >= (int)tracks_.size()) continue;
-
-        auto& tr = tracks_[(size_t)ti];
-        const auto& d = detections[di];
-
-        float mx = d.x + d.width * 0.5f;
-        float my = d.y + d.height * 0.5f;
-
-        cv::Mat m(2,1,CV_32F);
-        m.at<float>(0) = mx;
-        m.at<float>(1) = my;
-
-        tr.kf.correct(m);
-        tr.bbox = d;
-        tr.missed = 0;
-        tr.hits++;
-        if (!tr.confirmed && tr.hits >= cfg_.confirm_hits) tr.confirmed = true;
-    }
-
-    // 4) Spawn new tracks for unmatched detections
-    spawnNewTracks(detections, det_to_track);
-
-    // 5) Enforce capacity if overshoot (shouldn't happen often, but keep deterministic)
-    if ((int)tracks_.size() > cfg_.max_targets) {
-        // keep confirmed first, then by hits, then by lowest missed
-        std::sort(tracks_.begin(), tracks_.end(), [](const TrackKF& a, const TrackKF& b){
-            if (a.confirmed != b.confirmed) return a.confirmed > b.confirmed;
-            if (a.hits != b.hits) return a.hits > b.hits;
-            return a.missed < b.missed;
-        });
-        tracks_.resize((size_t)cfg_.max_targets);
-    }
-
-    // 6) Prune deleted tracks
-    tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
-        [&](const TrackKF& t){ return shouldDelete(t); }),
-        tracks_.end());
-
-    // 7) Build output targets
+void TrackerManager::rebuildTargets() {
     targets_.clear();
     targets_.reserve(tracks_.size());
 
@@ -207,12 +257,13 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
         tg.bbox = tr.bbox;
         tg.age_frames = tr.age;
         tg.missed_frames = tr.missed;
+
         tg.speedX_mps = tr.kf.statePost.at<float>(2);
         tg.speedY_mps = tr.kf.statePost.at<float>(3);
+
+        // Остальные поля Target остаются как у вас (overlay их использует)
         targets_.push_back(std::move(tg));
     }
-
-    return targets_;
 }
 
 int TrackerManager::pickTargetId(int x, int y) const {

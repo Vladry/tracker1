@@ -15,8 +15,7 @@
 
 // ===================== TUNABLE CONSTANTS (keep in main, top) =====================
 
-// 1) Max simultaneous targets (global constant as requested)
-static constexpr int MAX_SIMULTANEOUS_TARGETS = 10;
+
 
 // --- Detector (motion-diff) settings ---
 static constexpr int    DET_DIFF_THRESHOLD = 25;
@@ -35,12 +34,20 @@ static constexpr float  TRACK_ASSOC_IOU_MIN     = 0.05f;
 static constexpr float  TRACK_ASSOC_DIST_MAX_PX = 80.0f;
 static constexpr float  TRACK_SCORE_IOU_W       = 0.65f;
 static constexpr float  TRACK_SCORE_DIST_W      = 0.35f;
+static constexpr float TRACK_IOU_TH = 0.25f;
 
-// --- Tracker lifecycle / stability ---
+// ===================== TRACKER: stationary presence confirmation =====================
+static constexpr int   TRACK_STATIONARY_GRACE      = 120;   // держим дольше, т.к. motion=0
+static constexpr int   TRACK_MIN_PRESENCE_AREA_PX  = 200;   // bbox меньше — не проверяем appearance
+static constexpr int   APPR_PATCH_W                = 24;
+static constexpr int   APPR_PATCH_H                = 24;
+static constexpr float APPR_L1_THRESH              = 18.0f; // чем меньше, тем строже
+static constexpr float APPR_UPDATE_ALPHA           = 0.10f; // 0.05..0.15 обычно норм
 static constexpr int    TRACK_CONFIRM_HITS        = 3;
 static constexpr int    TRACK_MAX_MISSED_FRAMES   = 30;
-static constexpr int    TRACK_STATIONARY_GRACE    = 90;
 static constexpr float  TRACK_STATIONARY_SPEED_TH = 0.6f; // px/frame
+static constexpr int    MAX_TARGETS = 5;
+static constexpr int MAX_SIMULTANEOUS_TARGETS = 10;
 
 // --- Kalman tuning ---
 static constexpr float  TRACK_PROCESS_NOISE = 1e-2f;
@@ -107,19 +114,22 @@ int main(int argc, char *argv[]) {
     mcfg.expand_factor = MERGE_EXPAND_FACTOR;
 
     TrackerManager tracker(TrackerManager::Config{
-        TRACK_MATCH_IOU_TH,
-        TRACK_ASSOC_IOU_MIN,
-        TRACK_ASSOC_DIST_MAX_PX,
-        TRACK_SCORE_IOU_W,
-        TRACK_SCORE_DIST_W,
-        TRACK_CONFIRM_HITS,
-        TRACK_MAX_MISSED_FRAMES,
-        TRACK_STATIONARY_GRACE,
-        TRACK_STATIONARY_SPEED_TH,
-        MAX_SIMULTANEOUS_TARGETS,
-        TRACK_PROCESS_NOISE,
-        TRACK_MEAS_NOISE
+            TRACK_IOU_TH,
+            TRACK_MAX_MISSED_FRAMES,
+            MAX_SIMULTANEOUS_TARGETS,
+            TRACK_PROCESS_NOISE,
+            TRACK_MEAS_NOISE,
+
+            // new
+            TRACK_CONFIRM_HITS,
+            TRACK_STATIONARY_GRACE,
+            APPR_PATCH_W,
+            APPR_PATCH_H,
+            APPR_L1_THRESH,
+            APPR_UPDATE_ALPHA,
+            TRACK_MIN_PRESENCE_AREA_PX
     });
+
 
     OverlayRenderer overlay(OverlayRenderer::Config{
         OVERLAY_ALPHA, HIDE_OTHERS_WHEN_SELECTED
@@ -140,10 +150,25 @@ int main(int argc, char *argv[]) {
         // merge blobs to reduce "one body -> many bboxes"
         auto merged = blob::merge_blobs(dets, frame.size(), mcfg);
 
-        tracker.update(merged);
+        tracker.update(frame, merged);
 
         int sel = g_selected_id.load(std::memory_order_acquire);
+
+// auto-reset selection if target disappeared
+        bool sel_exists = false;
+        for (const auto& t : tracker.targets()) {
+            if (t.id == sel) {
+                sel_exists = true;
+                break;
+            }
+        }
+        if (!sel_exists) {
+            g_selected_id.store(-1, std::memory_order_release);
+            sel = -1;
+        }
+
         overlay.render(frame, tracker.targets(), sel);
+
 
         cv::imshow("OPI5", frame);
         int k = cv::waitKey(1);

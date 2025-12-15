@@ -67,10 +67,16 @@ static void onMouse(int event, int x, int y, int, void* userdata) {
     if (!tracker) return;
 
     int id = tracker->pickTargetId(x, y);
-    if (id > 0) {
-        g_selected_id.store(id, std::memory_order_release);
-        std::cout << "[mouse] selected id=" << id << " at " << x << "," << y << std::endl;
+
+    // If click not on any target -> clear selection (helps avoid "stuck hidden" UI state)
+    if (id <= 0) {
+        g_selected_id.store(-1, std::memory_order_release);
+        std::cout << "[mouse] selection cleared at " << x << "," << y << std::endl;
+        return;
     }
+
+    g_selected_id.store(id, std::memory_order_release);
+    std::cout << "[mouse] selected id=" << id << " at " << x << "," << y << std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -97,7 +103,7 @@ int main(int argc, char *argv[]) {
     rtsp.start();
 
     MotionDetector detector(MotionDetector::Config{
-        DET_DIFF_THRESHOLD, DET_MIN_AREA, DET_MORPH, DET_DOWNSCALE
+            DET_DIFF_THRESHOLD, DET_MIN_AREA, DET_MORPH, DET_DOWNSCALE
     });
 
     // Blob merger: reduce fragmentation before passing detections into tracker
@@ -107,22 +113,22 @@ int main(int argc, char *argv[]) {
     mcfg.expand_factor = MERGE_EXPAND_FACTOR;
 
     TrackerManager tracker(TrackerManager::Config{
-        TRACK_MATCH_IOU_TH,
-        TRACK_ASSOC_IOU_MIN,
-        TRACK_ASSOC_DIST_MAX_PX,
-        TRACK_SCORE_IOU_W,
-        TRACK_SCORE_DIST_W,
-        TRACK_CONFIRM_HITS,
-        TRACK_MAX_MISSED_FRAMES,
-        TRACK_STATIONARY_GRACE,
-        TRACK_STATIONARY_SPEED_TH,
-        MAX_SIMULTANEOUS_TARGETS,
-        TRACK_PROCESS_NOISE,
-        TRACK_MEAS_NOISE
+            TRACK_MATCH_IOU_TH,
+            TRACK_ASSOC_IOU_MIN,
+            TRACK_ASSOC_DIST_MAX_PX,
+            TRACK_SCORE_IOU_W,
+            TRACK_SCORE_DIST_W,
+            TRACK_CONFIRM_HITS,
+            TRACK_MAX_MISSED_FRAMES,
+            TRACK_STATIONARY_GRACE,
+            TRACK_STATIONARY_SPEED_TH,
+            MAX_SIMULTANEOUS_TARGETS,
+            TRACK_PROCESS_NOISE,
+            TRACK_MEAS_NOISE
     });
 
     OverlayRenderer overlay(OverlayRenderer::Config{
-        OVERLAY_ALPHA, HIDE_OTHERS_WHEN_SELECTED
+            OVERLAY_ALPHA, HIDE_OTHERS_WHEN_SELECTED
     });
 
     cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
@@ -140,9 +146,25 @@ int main(int argc, char *argv[]) {
         // merge blobs to reduce "one body -> many bboxes"
         auto merged = blob::merge_blobs(dets, frame.size(), mcfg);
 
-        tracker.update(merged);
+        // IMPORTANT: update now receives frame for presence confirmation / stationary handling
+        tracker.update(frame, merged);
 
+        // ---- Selection auto-reset if target disappeared ----
         int sel = g_selected_id.load(std::memory_order_acquire);
+        if (sel > 0) {
+            bool sel_exists = false;
+            const auto& ts = tracker.targets();
+            for (const auto& t : ts) {
+                if (t.id == sel) { sel_exists = true; break; }
+            }
+            if (!sel_exists) {
+                g_selected_id.store(-1, std::memory_order_release);
+                sel = -1;
+                std::cout << "[ui] selected target disappeared -> selection cleared, showing all targets" << std::endl;
+            }
+        }
+        // ---------------------------------------------------
+
         overlay.render(frame, tracker.targets(), sel);
 
         cv::imshow("OPI5", frame);
