@@ -2,83 +2,87 @@
 
 #include <opencv2/opencv.hpp>
 #include <vector>
-#include <string>
+#include <chrono>
 
 #include "target.h"
 
-// TrackerManager:
-// - получает детекции bbox (после merging blobs)
-// - ведёт треки с Kalman
-// - удерживает цели при остановке движения через presence confirmation в ROI
 class TrackerManager {
 public:
     struct Config {
-        // Association / lifecycle
-        float iou_threshold        = 0.25f; // minimum IOU to accept detection match
-        int   max_missed_frames    = 30;    // hard delete when missed too long (unconfirmed)
-        int   max_targets          = 10;    // global limit
+        // ---- limits / lifecycle ----
+        int   max_targets = 10;
 
-        // Kalman noise
-        float process_noise        = 1e-2f;
-        float meas_noise           = 1e-1f;
+        // delete if not seen for this long (seconds)
+        float occlusion_timeout_sec = 2.0f;
 
-        // Confirmation & stationary holding
-        int   confirm_hits         = 3;     // hits before track becomes confirmed
-        int   stationary_grace_frames = 60; // extra frames to keep confirmed tracks without detections
+        // confirmation (optional)
+        int   confirm_hits = 2;
 
-        // Presence confirmation (appearance)
-        int   appearance_patch_w   = 24;    // ROI resized to WxH
-        int   appearance_patch_h   = 24;
-        float appearance_l1_thresh = 18.0f; // mean L1 per pixel threshold (tune in main)
-        float appearance_update_alpha = 0.10f; // how fast reference adapts when matched (0..1)
-        int   min_presence_area_px = 120;   // ignore too small bbox for presence check
+        // ---- detector seeding gate (main filters too, but keep here for safety) ----
+        float seed_overlap_iou = 0.30f; // if new detection overlaps existing track above this, ignore it
+
+        // ---- Template tracking (core of "tracker follows target") ----
+        int   tmpl_patch_w = 32;
+        int   tmpl_patch_h = 32;
+
+        // search window expansion around current bbox (pixels)
+        int   tmpl_search_px = 40;
+
+        // matchTemplate threshold (TM_CCOEFF_NORMED), 0..1, higher is stricter
+        float tmpl_min_score = 0.60f;
+
+        // template adaptation (0..1), small value recommended
+        float tmpl_update_alpha = 0.05f;
+
+        // ignore too small targets for template tracking
+        int   min_template_area_px = 200;
+
+        // ---- debug ----
+        bool  enable_template_tracking = true;
     };
 
     explicit TrackerManager(const Config& cfg);
 
     void reset();
 
-    // IMPORTANT: now requires current frame to do presence confirmation.
-    // detections are in full-frame coordinates (cv::Rect2f).
+    // Detector provides ONLY "new targets" here. Tracker follows existing on every frame.
     std::vector<Target> update(const cv::Mat& frame_bgr,
-                               const std::vector<cv::Rect2f>& detections);
+                               const std::vector<cv::Rect2f>& new_detections);
 
     const std::vector<Target>& targets() const { return targets_; }
 
     int pickTargetId(int x, int y) const;
 
 private:
-    struct TrackKF {
+    struct Track {
         int id = -1;
 
-        cv::KalmanFilter kf;
         cv::Rect2f bbox;
 
-        int age = 0;       // frames since birth
-        int missed = 0;    // consecutive misses
-        int hits = 0;      // total successful matches
+        int hits = 0;
         bool confirmed = false;
 
-        // Appearance reference (grayscale patch), used when detector outputs nothing
-        cv::Mat appearance_ref;     // CV_8UC1, size = (appearance_patch_h x appearance_patch_w)
-        bool appearance_valid = false;
+        // template tracking state
+        cv::Mat tmpl_gray; // CV_8UC1, size = tmpl_patch_h x tmpl_patch_w
+
+        // occlusion timer
+        std::chrono::steady_clock::time_point last_seen;
     };
 
     Config cfg_;
     int next_id_ = 1;
 
-    std::vector<TrackKF> tracks_;
+    std::vector<Track> tracks_;
     std::vector<Target> targets_;
 
+private:
     static float iou(const cv::Rect2f& a, const cv::Rect2f& b);
 
-    // presence confirmation helpers
-    bool extractAppearanceRef(const cv::Mat& frame_bgr, const cv::Rect2f& bbox, cv::Mat& out_ref) const;
-    bool appearanceMatches(const cv::Mat& frame_bgr, const TrackKF& t) const;
-    void updateAppearanceRef(const cv::Mat& frame_bgr, TrackKF& t) const;
+    bool extractTemplate(const cv::Mat& frame_bgr, const cv::Rect2f& bbox, cv::Mat& out_tmpl) const;
+    bool templateTrackOne(const cv::Mat& frame_bgr, Track& tr) const;
+    void updateTemplate(Track& tr, const cv::Mat& new_tmpl) const;
 
-    static cv::KalmanFilter makeKF(float px, float py, float vx, float vy,
-                                   float process_noise, float meas_noise);
+    bool overlapsExisting(const cv::Rect2f& det) const;
 
     void rebuildTargets();
 };
