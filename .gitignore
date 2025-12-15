@@ -1,7 +1,6 @@
 #build
 cmake-build-*/
 build
-описан*
 
 #IDE
 .idea

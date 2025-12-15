@@ -1,4 +1,4 @@
-#include "detector.h"
+#include "detect/motion_detector.h"
 
 MotionDetector::MotionDetector(const Config& cfg) : cfg_(cfg) {}
 

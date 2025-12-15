@@ -1,4 +1,4 @@
-#include "frame_store.h"
+#include "core/frame_store.h"
 
 void FrameStore::setFrame(cv::Mat frame_bgr) {
     std::lock_guard<std::mutex> lock(mtx_);

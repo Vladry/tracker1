@@ -4,7 +4,7 @@
 #include <atomic>
 #include <string>
 #include <thread>
-#include "frame_store.h"
+#include "core/frame_store.h"
 
 class RtspWorker {
 public:

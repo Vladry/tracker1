@@ -1,4 +1,4 @@
-#include "overlay.h"
+#include "overlay/overlay_renderer.h"
 
 OverlayRenderer::OverlayRenderer(const Config& cfg) : cfg_(cfg) {}
 
