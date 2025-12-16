@@ -1,7 +1,6 @@
 #include <gst/gst.h>
 #include <opencv2/opencv.hpp>
 
-#include <thread>
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -10,34 +9,52 @@
 #include "core/frame_store.h"
 #include "rtsp/rtsp_worker.h"
 #include "detect/motion_detector.h"
+#include "detect/bbox_filter.h"
 #include "tracker/tracker_manager.h"
 #include "overlay/overlay_renderer.h"
-#include "blob/blob_merger.h"
+#include "ui/ui_thread.h"
 
 // ===================== USER TUNABLE =====================
 
 // --- Tracker ---
-static constexpr int   MAX_TARGETS = 3;
-static constexpr int   TRACKER_UPDATE_EVERY = 3;
+static constexpr int   MAX_TARGETS = 10;
+static constexpr int   TRACKER_UPDATE_EVERY = 1;
 
 // --- Visual tracking performance ---
-static constexpr bool  USE_CSRT = true;
+static constexpr bool   USE_CSRT = true;
 static constexpr double OCCLUSION_TIMEOUT_SEC = 1.0;
-static constexpr bool  ALLOW_RESYNC = true;
-static constexpr int   RESYNC_EVERY_N_FRAMES = 15;
+static constexpr bool   ALLOW_RESYNC = true;
+static constexpr int    RESYNC_EVERY_N_FRAMES = 5;
 
 // --- Detection ---
 static constexpr float DET_MATCH_IOU   = 0.20f;
 static constexpr float SPAWN_BLOCK_IOU = 0.25f;
 
+// --- BBox filter + hysteresis ---
+static constexpr int    BBOX_MIN_AREA_PX   = 800;
+static constexpr int    BBOX_MAX_AREA_PX   = 120000;
+static constexpr double BBOX_MAX_AREA_FRAC = 0.25;
+
+static constexpr int    BBOX_MIN_W = 12;
+static constexpr int    BBOX_MIN_H = 12;
+static constexpr double BBOX_MIN_AR = 0.15;
+static constexpr double BBOX_MAX_AR = 6.0;
+
+static constexpr double BBOX_MATCH_IOU = 0.30;
+static constexpr double BBOX_MAX_AREA_JUMP_RATIO = 2.5;
+static constexpr int    BBOX_HOLD_MISSED_FRAMES = 3;
+
+// --- UI ---
+static constexpr int UI_TARGET_FPS = 30;
+
 // --- Debug ---
-static constexpr bool  DEBUG_LOGS = true;
-static constexpr int   LOG_EVERY_N_FRAMES = 120;
+static constexpr bool DEBUG_LOGS = true;
+static constexpr int  LOG_EVERY_N_FRAMES = 120;
 
 // --- RTSP ---
 static const char* RTSP_URL = "rtsp://192.168.144.25:8554/main.264";
-static constexpr int RTSP_PROTOCOLS = 1; // UDP
-static constexpr int RTSP_LATENCY_MS = 0;
+static constexpr int     RTSP_PROTOCOLS = 1; // UDP
+static constexpr int     RTSP_LATENCY_MS = 0;
 static constexpr guint64 RTSP_TIMEOUT_US = 2000000;
 static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
 
@@ -50,19 +67,7 @@ static FrameStore* g_store_ptr = nullptr;
 static void onSigInt(int) {
     g_running.store(false, std::memory_order_release);
     if (g_store_ptr)
-        g_store_ptr->stop();   // будим waitFrame()
-}
-
-static void onMouse(int event, int x, int y, int, void* userdata) {
-    if (event != cv::EVENT_LBUTTONDOWN) return;
-    auto* tracker = static_cast<TrackerManager*>(userdata);
-    if (!tracker) return;
-
-    int id = tracker->pickTargetId(x, y);
-    if (id > 0) {
-        g_selected_id.store(id, std::memory_order_release);
-        std::cout << "[mouse] selected id=" << id << std::endl;
-    }
+        g_store_ptr->stop();
 }
 
 int main(int argc, char* argv[]) {
@@ -78,6 +83,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT,  onSigInt);
     std::signal(SIGTERM, onSigInt);
 
+    // ---------------- RTSP ----------------
     RtspWorker::Config rcfg;
     rcfg.url = RTSP_URL;
     rcfg.protocols = RTSP_PROTOCOLS;
@@ -88,18 +94,30 @@ int main(int argc, char* argv[]) {
     RtspWorker rtsp(store, rcfg);
     rtsp.start();
 
+    // ---------------- Detector ----------------
     MotionDetector detector(MotionDetector::Config{
-            25,    // diff threshold
-            250,   // min area
-            3,     // morph
-            1.0    // downscale
+            25,   // diff threshold
+            250,  // min area
+            3,    // morph
+            1.0   // downscale
     });
 
-    blob::MergeParams mcfg;
-    mcfg.iou_threshold = 0.12f;
-    mcfg.gap_px = 10;
-    mcfg.expand_factor = 0.08f;
+    // ---------------- BBox filter ----------------
+    detect::BBoxFilter::Config fcfg;
+    fcfg.min_area_px = BBOX_MIN_AREA_PX;
+    fcfg.max_area_px = BBOX_MAX_AREA_PX;
+    fcfg.max_area_frac = BBOX_MAX_AREA_FRAC;
+    fcfg.min_w = BBOX_MIN_W;
+    fcfg.min_h = BBOX_MIN_H;
+    fcfg.min_ar = BBOX_MIN_AR;
+    fcfg.max_ar = BBOX_MAX_AR;
+    fcfg.match_iou = BBOX_MATCH_IOU;
+    fcfg.max_area_jump_ratio = BBOX_MAX_AREA_JUMP_RATIO;
+    fcfg.hold_missed_frames = BBOX_HOLD_MISSED_FRAMES;
 
+    detect::BBoxFilter bbox_filter(fcfg);
+
+    // ---------------- Tracker ----------------
     TrackerManager::Config tcfg;
     tcfg.max_targets = MAX_TARGETS;
     tcfg.use_csrt = USE_CSRT;
@@ -114,45 +132,68 @@ int main(int argc, char* argv[]) {
 
     TrackerManager tracker(tcfg);
 
+    // ---------------- Overlay ----------------
     OverlayRenderer overlay(OverlayRenderer::Config{
-            0.35f,
-            true
+            0.35f,  // alpha
+            true    // hide others when selected
     });
 
-    cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
-    cv::setMouseCallback("OPI5", onMouse, &tracker);
+    // ---------------- UI thread ----------------
+    ui::UiThread uiThread("OPI5", UI_TARGET_FPS);
+    uiThread.start();
 
-    // ===================== MAIN LOOP =====================
-    // НЕТ polling, НЕТ sleep, НЕТ waitKey
-    // Поток СПИТ, пока не придёт кадр
-    // =====================================================
+    int last_click_seq = uiThread.clickState().seq.load(std::memory_order_acquire);
+
+    // ===================== PROCESS LOOP =====================
+    // wait/notify, без polling, без waitKey
+    // ========================================================
 
     while (g_running.load(std::memory_order_acquire)) {
         cv::Mat frame;
 
-        if (!store.waitFrame(frame, 2000)) {
-            continue;   // timeout или stop
+        if (!store.waitFrame(frame, 2000))
+            continue;
+
+        // 1) detect raw
+        auto dets = detector.detect(frame);
+
+        // 2) filter + stabilize (no merge)
+        auto stable = bbox_filter.process(dets, frame.size());
+
+        // 3) update tracker using stabilized dets
+        tracker.update(frame, stable);
+
+        // 4) mouse click handling (thread-safe): UI thread only stores x/y/seq,
+        //    processing thread calls tracker->pickTargetId
+        const int cur_seq = uiThread.clickState().seq.load(std::memory_order_acquire);
+        if (cur_seq != last_click_seq) {
+            last_click_seq = cur_seq;
+            const int cx = uiThread.clickState().x.load(std::memory_order_acquire);
+            const int cy = uiThread.clickState().y.load(std::memory_order_acquire);
+
+            int id = tracker.pickTargetId(cx, cy);
+            if (id > 0) {
+                g_selected_id.store(id, std::memory_order_release);
+                std::cout << "[mouse] selected id=" << id << std::endl;
+            }
         }
 
-        auto dets = detector.detect(frame);
-        auto merged = blob::merge_blobs(dets, frame.size(), mcfg);
-
-        tracker.update(frame, merged);
-
+        // 5) selected target validity
         int sel = g_selected_id.load(std::memory_order_acquire);
         if (sel > 0 && !tracker.hasTargetId(sel)) {
             g_selected_id.store(-1, std::memory_order_release);
             sel = -1;
         }
 
+        // 6) render overlay into frame
         overlay.render(frame, tracker.targets(), sel);
-        cv::imshow("OPI5", frame);
 
-        // ОБЯЗАТЕЛЬНО: прокачка HighGUI без ожиданий
-        cv::pollKey();
+        // 7) send to UI thread (smooth)
+        uiThread.submitFrame(frame);
     }
 
     store.stop();
     rtsp.stop();
+    uiThread.stop();
     return 0;
 }

@@ -26,6 +26,8 @@ add_executable(opi5_tracker
     src/overlay/overlay_renderer.cpp
     src/util/rect_utils.cpp
     src/util/offset_calculator.cpp
+    src/ui/ui_thread.cpp
+    src/detect/bbox_filter.cpp
 )
 
 target_compile_options(opi5_tracker PRIVATE ${GST_CFLAGS_OTHER})
