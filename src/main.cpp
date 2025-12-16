@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <csignal>
 
 #include "core/frame_store.h"
 #include "rtsp/rtsp_worker.h"
@@ -17,10 +18,10 @@
 
 // --- Tracker ---
 static constexpr int   MAX_TARGETS = 3;
-static constexpr int TRACKER_UPDATE_EVERY = 3; // 1=каждый кадр, 2=через кадр, 3=реже
+static constexpr int   TRACKER_UPDATE_EVERY = 3;
 
 // --- Visual tracking performance ---
-static constexpr bool  USE_CSRT = true;          // false = KCF (faster)
+static constexpr bool  USE_CSRT = true;
 static constexpr double OCCLUSION_TIMEOUT_SEC = 1.0;
 static constexpr bool  ALLOW_RESYNC = true;
 static constexpr int   RESYNC_EVERY_N_FRAMES = 15;
@@ -42,7 +43,15 @@ static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
 
 // =======================================================
 
-static std::atomic<int> g_selected_id{-1};
+static std::atomic<int>  g_selected_id{-1};
+static std::atomic<bool> g_running{true};
+static FrameStore* g_store_ptr = nullptr;
+
+static void onSigInt(int) {
+    g_running.store(false, std::memory_order_release);
+    if (g_store_ptr)
+        g_store_ptr->stop();   // будим waitFrame()
+}
 
 static void onMouse(int event, int x, int y, int, void* userdata) {
     if (event != cv::EVENT_LBUTTONDOWN) return;
@@ -61,13 +70,13 @@ int main(int argc, char* argv[]) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 
-    // keep commented (debug helper)
-    // setenv("GST_DEBUG", "rtspsrc:6,rtsp*:6", 1);
-//    setenv("GST_DEBUG", "mpp*:4", 1);  //-смотреть аппаратный ли или программный декодер работает
-
     gst_init(&argc, &argv);
 
     FrameStore store;
+    g_store_ptr = &store;
+
+    std::signal(SIGINT,  onSigInt);
+    std::signal(SIGTERM, onSigInt);
 
     RtspWorker::Config rcfg;
     rcfg.url = RTSP_URL;
@@ -80,10 +89,10 @@ int main(int argc, char* argv[]) {
     rtsp.start();
 
     MotionDetector detector(MotionDetector::Config{
-            25,   // diff threshold
-            250,  // min area
-            3,    // morph
-            1.0   // downscale
+            25,    // diff threshold
+            250,   // min area
+            3,     // morph
+            1.0    // downscale
     });
 
     blob::MergeParams mcfg;
@@ -106,18 +115,23 @@ int main(int argc, char* argv[]) {
     TrackerManager tracker(tcfg);
 
     OverlayRenderer overlay(OverlayRenderer::Config{
-            0.35f,   // alpha
-            true     // hide others when selected
+            0.35f,
+            true
     });
 
     cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
     cv::setMouseCallback("OPI5", onMouse, &tracker);
 
-    while (true) {
+    // ===================== MAIN LOOP =====================
+    // НЕТ polling, НЕТ sleep, НЕТ waitKey
+    // Поток СПИТ, пока не придёт кадр
+    // =====================================================
+
+    while (g_running.load(std::memory_order_acquire)) {
         cv::Mat frame;
-        if (!store.tryGetFrame(frame)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue;
+
+        if (!store.waitFrame(frame, 2000)) {
+            continue;   // timeout или stop
         }
 
         auto dets = detector.detect(frame);
@@ -126,19 +140,19 @@ int main(int argc, char* argv[]) {
         tracker.update(frame, merged);
 
         int sel = g_selected_id.load(std::memory_order_acquire);
-
-        // if selected target disappeared — unselect
         if (sel > 0 && !tracker.hasTargetId(sel)) {
             g_selected_id.store(-1, std::memory_order_release);
             sel = -1;
         }
 
         overlay.render(frame, tracker.targets(), sel);
-
         cv::imshow("OPI5", frame);
-        if (cv::waitKey(1) == 27) break;
+
+        // ОБЯЗАТЕЛЬНО: прокачка HighGUI без ожиданий
+        cv::pollKey();
     }
 
+    store.stop();
     rtsp.stop();
     return 0;
 }
