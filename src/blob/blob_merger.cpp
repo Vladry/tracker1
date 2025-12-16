@@ -1,96 +1,119 @@
 #include "blob/blob_merger.h"
-#include "util/rect_utils.h"
-#include <numeric>
 #include <algorithm>
-
-namespace {
-
-struct DSU {
-    std::vector<int> p, r;
-    explicit DSU(int n): p(n), r(n,0) { std::iota(p.begin(), p.end(), 0); }
-    int find(int a){ return p[a]==a ? a : (p[a]=find(p[a])); }
-    void unite(int a,int b){
-        a=find(a); b=find(b);
-        if(a==b) return;
-        if(r[a]<r[b]) std::swap(a,b);
-        p[b]=a;
-        if(r[a]==r[b]) r[a]++;
-    }
-};
-
-static cv::Rect2f rect_union(const cv::Rect2f& a, const cv::Rect2f& b) {
-    float x1 = std::min(a.x, b.x);
-    float y1 = std::min(a.y, b.y);
-    float x2 = std::max(a.x + a.width,  b.x + b.width);
-    float y2 = std::max(a.y + a.height, b.y + b.height);
-    return cv::Rect2f(x1, y1, x2 - x1, y2 - y1);
-}
-
-// minimal distance between rectangles (0 if overlaps)
-static bool close_enough(const cv::Rect2f& a, const cv::Rect2f& b, int gap_px) {
-    float ax2 = a.x + a.width;
-    float ay2 = a.y + a.height;
-    float bx2 = b.x + b.width;
-    float by2 = b.y + b.height;
-
-    float dx = 0.0f;
-    if (ax2 < b.x) dx = b.x - ax2;
-    else if (bx2 < a.x) dx = a.x - bx2;
-
-    float dy = 0.0f;
-    if (ay2 < b.y) dy = b.y - ay2;
-    else if (by2 < a.y) dy = a.y - by2;
-
-    return (dx <= (float)gap_px) && (dy <= (float)gap_px);
-}
-
-} // namespace
+#include <numeric>
+#include <cmath>
 
 namespace blob {
 
-std::vector<cv::Rect2f> merge_blobs(const std::vector<cv::Rect2f>& in,
-                                   const cv::Size& frame_size,
-                                   const MergeParams& p)
-{
-    if (in.empty()) return {};
-
-    // Expand slightly to encourage merging of sub-blobs
-    std::vector<cv::Rect2f> r(in.size());
-    for (size_t i=0;i<in.size();++i) {
-        r[i] = util::expandAndClamp(in[i], frame_size, p.expand_factor);
+    static float iou(const cv::Rect2f& a, const cv::Rect2f& b) {
+        cv::Rect2f inter = a & b;
+        float ia = inter.area();
+        if (ia <= 0.f) return 0.f;
+        float ua = a.area() + b.area() - ia;
+        return ua > 0.f ? ia / ua : 0.f;
     }
 
-    DSU dsu((int)r.size());
+    static cv::Point2f centerOf(const cv::Rect2f& r) {
+        return { r.x + r.width*0.5f, r.y + r.height*0.5f };
+    }
 
-    for (int i=0;i<(int)r.size();++i) {
-        for (int j=i+1;j<(int)r.size();++j) {
-            float v = util::iou(r[i], r[j]);
-            if (v >= p.iou_threshold || close_enough(r[i], r[j], p.gap_px)) {
-                dsu.unite(i, j);
+    static float dist(const cv::Point2f& a, const cv::Point2f& b) {
+        float dx = a.x - b.x;
+        float dy = a.y - b.y;
+        return std::sqrt(dx*dx + dy*dy);
+    }
+
+    static cv::Rect2f expand(const cv::Rect2f& r, float factor, int gap) {
+        float ex = r.width  * factor + (float)gap;
+        float ey = r.height * factor + (float)gap;
+        return cv::Rect2f(r.x - ex, r.y - ey, r.width + 2*ex, r.height + 2*ey);
+    }
+
+    struct DSU {
+        std::vector<int> p, r;
+        explicit DSU(int n) : p(n), r(n,0) { std::iota(p.begin(), p.end(), 0); }
+        int find(int x){ return p[x]==x?x:p[x]=find(p[x]); }
+        void uni(int a,int b){
+            a=find(a); b=find(b);
+            if(a==b) return;
+            if(r[a]<r[b]) std::swap(a,b);
+            p[b]=a;
+            if(r[a]==r[b]) r[a]++;
+        }
+    };
+
+    std::vector<cv::Rect2f> merge_blobs(const std::vector<cv::Rect2f>& in,
+                                        const cv::Size& frame_size,
+                                        const MergeParams& p)
+    {
+        std::vector<cv::Rect2f> v;
+        v.reserve(in.size());
+
+        // clamp + filter tiny
+        for (auto r : in) {
+            cv::Rect2f fr(0,0,(float)frame_size.width,(float)frame_size.height);
+            r = r & fr;
+            if (r.area() >= (float)p.min_area_px) v.push_back(r);
+        }
+        if (v.empty()) return {};
+
+        const int n = (int)v.size();
+        DSU dsu(n);
+
+        // union by overlap/near
+        for (int i = 0; i < n; ++i) {
+            cv::Rect2f ei = expand(v[i], p.expand_factor, p.gap_px);
+            cv::Point2f ci = centerOf(v[i]);
+
+            for (int j = i+1; j < n; ++j) {
+                cv::Rect2f ej = expand(v[j], p.expand_factor, p.gap_px);
+                cv::Point2f cj = centerOf(v[j]);
+
+                bool close = dist(ci, cj) <= p.center_dist_px;
+                bool ov_iou = iou(v[i], v[j]) >= p.iou_threshold;
+                bool ov_exp = (ei & ej).area() > 0.f;
+
+                if (ov_iou || ov_exp || close) dsu.uni(i, j);
             }
         }
+
+        // collect groups
+        std::vector<cv::Rect2f> out;
+        out.reserve(n);
+
+        std::vector<int> root(n);
+        for (int i = 0; i < n; ++i) root[i] = dsu.find(i);
+
+        // map root -> bbox union
+        std::vector<int> uniq;
+        uniq.reserve(n);
+        for (int i = 0; i < n; ++i) uniq.push_back(root[i]);
+        std::sort(uniq.begin(), uniq.end());
+        uniq.erase(std::unique(uniq.begin(), uniq.end()), uniq.end());
+
+        for (int r0 : uniq) {
+            cv::Rect2f u = v[0];
+            bool first = true;
+            for (int i = 0; i < n; ++i) {
+                if (root[i] != r0) continue;
+                if (first) { u = v[i]; first = false; }
+                else {
+                    float x1 = std::min(u.x, v[i].x);
+                    float y1 = std::min(u.y, v[i].y);
+                    float x2 = std::max(u.x + u.width,  v[i].x + v[i].width);
+                    float y2 = std::max(u.y + u.height, v[i].y + v[i].height);
+                    u = cv::Rect2f(x1, y1, x2-x1, y2-y1);
+                }
+            }
+            out.push_back(u);
+        }
+
+        // sort by area desc, keep top max_out
+        std::sort(out.begin(), out.end(),
+                  [](const cv::Rect2f& a, const cv::Rect2f& b){ return a.area() > b.area(); });
+
+        if ((int)out.size() > p.max_out) out.resize((size_t)p.max_out);
+        return out;
     }
-
-    std::vector<cv::Rect2f> merged(r.size());
-    std::vector<bool> has(r.size(), false);
-    for (int i=0;i<(int)r.size();++i) {
-        int root = dsu.find(i);
-        if (!has[root]) { merged[root] = r[i]; has[root] = true; }
-        else merged[root] = rect_union(merged[root], r[i]);
-    }
-
-    std::vector<cv::Rect2f> out;
-    out.reserve(r.size());
-    for (int i=0;i<(int)r.size();++i) {
-        if (has[i]) out.push_back(util::clampRect(merged[i], frame_size));
-    }
-
-    // sort by area descending (useful when later enforcing max targets)
-    std::sort(out.begin(), out.end(), [](const cv::Rect2f& a, const cv::Rect2f& b){
-        return a.area() > b.area();
-    });
-
-    return out;
-}
 
 } // namespace blob

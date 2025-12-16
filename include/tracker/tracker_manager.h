@@ -1,6 +1,8 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
+#include <opencv2/tracking.hpp>
+
 #include <vector>
 #include <chrono>
 #include <string>
@@ -12,43 +14,51 @@ public:
     struct Config {
         int   max_targets = 10;
 
-        float occlusion_timeout_sec = 2.0f;
-        float stationary_hold_sec   = 30.0f; // держим статичную цель долго
-        int   confirm_hits = 2;
+        // Visual tracker
+        bool  use_csrt = false;          // false = KCF (быстро)
+        int   tracker_update_every = 2;  // обновлять tracker раз в N кадров
 
-        float assoc_iou_threshold = 0.25f;
-        float spawn_block_iou     = 0.30f;
+        // Detection usage (capture + resync)
+        float det_match_iou   = 0.20f;
+        float spawn_block_iou = 0.25f;
 
-        bool  use_kalman = true;
-        float kalman_process_noise = 1e-2f;
-        float kalman_meas_noise    = 1e-1f;
-        float stationary_speed_px = 0.5f;
+        // Lifecycle
+        double occlusion_timeout_sec = 2.0;
+
+        // Resync
+        bool  allow_resync = true;
+        int   resync_every_n_frames = 15;
+
+        // Debug
+        bool  debug_logs = false;
+        int   debug_every_n_frames = 60;
     };
 
     explicit TrackerManager(const Config& cfg);
 
     void reset();
 
-    std::vector<Target> update(
-            const cv::Mat& frame,
-            const std::vector<cv::Rect2f>& detections
-    );
+    std::vector<Target> update(const cv::Mat& frame_bgr,
+                               const std::vector<cv::Rect2f>& detections);
 
     const std::vector<Target>& targets() const { return targets_; }
-    int pickTargetId(int x, int y) const;
+
+    int  pickTargetId(int x, int y) const;
+    bool hasTargetId(int id) const;
 
 private:
+    using Clock = std::chrono::steady_clock;
+
     struct Track {
         int id = -1;
+
         cv::Rect2f bbox;
+        cv::Ptr<cv::Tracker> tracker;
+
+        bool tracker_ok = false;
+        Clock::time_point last_ok;
 
         int hits = 0;
-        bool confirmed = false;
-
-        cv::KalmanFilter kf;
-        bool kf_initialized = false;
-
-        std::chrono::steady_clock::time_point last_seen;
     };
 
     Config cfg_;
@@ -57,11 +67,15 @@ private:
     std::vector<Track> tracks_;
     std::vector<Target> targets_;
 
+    // frame counter (for throttling visual tracker)
+    int frame_index_ = 0;
+
 private:
     static float iou(const cv::Rect2f& a, const cv::Rect2f& b);
 
-    cv::KalmanFilter makeKalman(float cx, float cy) const;
-    float speedPx(const Track& t) const;
+    cv::Ptr<cv::Tracker> createTracker() const;
+    void initTracker(Track& t, const cv::Mat& frame, const cv::Rect2f& bbox);
 
+    bool spawnBlocked(const cv::Rect2f& det) const;
     void rebuildTargets();
 };

@@ -13,51 +13,34 @@
 #include "overlay/overlay_renderer.h"
 #include "blob/blob_merger.h"
 
-// ===================== TUNABLE CONSTANTS =====================
+// ===================== USER TUNABLE =====================
 
-// --- Tracker mode ---
-static constexpr bool USE_KALMAN = false;
+// --- Tracker ---
+static constexpr int   MAX_TARGETS = 3;
+static constexpr int TRACKER_UPDATE_EVERY = 3; // 1=каждый кадр, 2=через кадр, 3=реже
 
-// --- Limits ---
-static constexpr int MAX_SIMULTANEOUS_TARGETS = 10;
+// --- Visual tracking performance ---
+static constexpr bool  USE_CSRT = true;          // false = KCF (faster)
+static constexpr double OCCLUSION_TIMEOUT_SEC = 1.0;
+static constexpr bool  ALLOW_RESYNC = true;
+static constexpr int   RESYNC_EVERY_N_FRAMES = 15;
 
-// --- Detector ---
-static constexpr int    DET_DIFF_THRESHOLD = 25;
-static constexpr int    DET_MIN_AREA       = 250;
-static constexpr int    DET_MORPH          = 3;
-static constexpr double DET_DOWNSCALE      = 1.0;
+// --- Detection ---
+static constexpr float DET_MATCH_IOU   = 0.20f;
+static constexpr float SPAWN_BLOCK_IOU = 0.25f;
 
-// --- Blob merge ---
-static constexpr float  MERGE_IOU_THRESHOLD = 0.12f;
-static constexpr int    MERGE_GAP_PX        = 10;
-static constexpr float  MERGE_EXPAND_FACTOR = 0.08f;
-
-// --- Tracker association ---
-static constexpr float  ASSOC_IOU_TH      = 0.25f;
-static constexpr float  SPAWN_BLOCK_IOU   = 0.30f;
-
-// --- Kalman ---
-static constexpr float  KALMAN_PROCESS_NOISE = 1e-2f;
-static constexpr float  KALMAN_MEAS_NOISE    = 1e-1f;
-static constexpr float  STATIONARY_SPEED_PX  = 0.5f;
-
-// --- Tracker lifecycle ---
-static constexpr float  OCCLUSION_TIMEOUT_SEC = 2.0f;
-static constexpr float  STATIONARY_HOLD_SEC   = 30.0f;
-static constexpr int    TRACK_CONFIRM_HITS    = 2;
-
-// --- Overlay ---
-static constexpr float  OVERLAY_ALPHA = 0.35f;
-static constexpr bool   HIDE_OTHERS_WHEN_SELECTED = true;
+// --- Debug ---
+static constexpr bool  DEBUG_LOGS = true;
+static constexpr int   LOG_EVERY_N_FRAMES = 120;
 
 // --- RTSP ---
 static const char* RTSP_URL = "rtsp://192.168.144.25:8554/main.264";
-static constexpr int RTSP_PROTOCOLS = 1;
+static constexpr int RTSP_PROTOCOLS = 1; // UDP
 static constexpr int RTSP_LATENCY_MS = 0;
 static constexpr guint64 RTSP_TIMEOUT_US = 2000000;
 static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
 
-// ============================================================
+// =======================================================
 
 static std::atomic<int> g_selected_id{-1};
 
@@ -67,15 +50,20 @@ static void onMouse(int event, int x, int y, int, void* userdata) {
     if (!tracker) return;
 
     int id = tracker->pickTargetId(x, y);
-    if (id >= 0) g_selected_id.store(id);
+    if (id > 0) {
+        g_selected_id.store(id, std::memory_order_release);
+        std::cout << "[mouse] selected id=" << id << std::endl;
+    }
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
+
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 
-    // keep commented
+    // keep commented (debug helper)
     // setenv("GST_DEBUG", "rtspsrc:6,rtsp*:6", 1);
+//    setenv("GST_DEBUG", "mpp*:4", 1);  //-смотреть аппаратный ли или программный декодер работает
 
     gst_init(&argc, &argv);
 
@@ -91,38 +79,36 @@ int main(int argc, char *argv[]) {
     RtspWorker rtsp(store, rcfg);
     rtsp.start();
 
-    MotionDetector detector({
-                                    DET_DIFF_THRESHOLD,
-                                    DET_MIN_AREA,
-                                    DET_MORPH,
-                                    DET_DOWNSCALE
-                            });
+    MotionDetector detector(MotionDetector::Config{
+            25,   // diff threshold
+            250,  // min area
+            3,    // morph
+            1.0   // downscale
+    });
 
     blob::MergeParams mcfg;
-    mcfg.iou_threshold = MERGE_IOU_THRESHOLD;
-    mcfg.gap_px        = MERGE_GAP_PX;
-    mcfg.expand_factor = MERGE_EXPAND_FACTOR;
+    mcfg.iou_threshold = 0.12f;
+    mcfg.gap_px = 10;
+    mcfg.expand_factor = 0.08f;
 
     TrackerManager::Config tcfg;
-    tcfg.max_targets = MAX_SIMULTANEOUS_TARGETS;
+    tcfg.max_targets = MAX_TARGETS;
+    tcfg.use_csrt = USE_CSRT;
     tcfg.occlusion_timeout_sec = OCCLUSION_TIMEOUT_SEC;
-    tcfg.stationary_hold_sec   = STATIONARY_HOLD_SEC;
-    tcfg.confirm_hits          = TRACK_CONFIRM_HITS;
-
-    tcfg.assoc_iou_threshold = ASSOC_IOU_TH;
-    tcfg.spawn_block_iou     = SPAWN_BLOCK_IOU;
-
-    tcfg.use_kalman = USE_KALMAN;
-    tcfg.kalman_process_noise = KALMAN_PROCESS_NOISE;
-    tcfg.kalman_meas_noise    = KALMAN_MEAS_NOISE;
-    tcfg.stationary_speed_px  = STATIONARY_SPEED_PX;
+    tcfg.allow_resync = ALLOW_RESYNC;
+    tcfg.resync_every_n_frames = RESYNC_EVERY_N_FRAMES;
+    tcfg.det_match_iou = DET_MATCH_IOU;
+    tcfg.spawn_block_iou = SPAWN_BLOCK_IOU;
+    tcfg.debug_logs = DEBUG_LOGS;
+    tcfg.debug_every_n_frames = LOG_EVERY_N_FRAMES;
+    tcfg.tracker_update_every = TRACKER_UPDATE_EVERY;
 
     TrackerManager tracker(tcfg);
 
-    OverlayRenderer overlay({
-                                    OVERLAY_ALPHA,
-                                    HIDE_OTHERS_WHEN_SELECTED
-                            });
+    OverlayRenderer overlay(OverlayRenderer::Config{
+            0.35f,   // alpha
+            true     // hide others when selected
+    });
 
     cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
     cv::setMouseCallback("OPI5", onMouse, &tracker);
@@ -134,12 +120,19 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        auto dets   = detector.detect(frame);
+        auto dets = detector.detect(frame);
         auto merged = blob::merge_blobs(dets, frame.size(), mcfg);
 
         tracker.update(frame, merged);
 
-        int sel = g_selected_id.load();
+        int sel = g_selected_id.load(std::memory_order_acquire);
+
+        // if selected target disappeared — unselect
+        if (sel > 0 && !tracker.hasTargetId(sel)) {
+            g_selected_id.store(-1, std::memory_order_release);
+            sel = -1;
+        }
+
         overlay.render(frame, tracker.targets(), sel);
 
         cv::imshow("OPI5", frame);
