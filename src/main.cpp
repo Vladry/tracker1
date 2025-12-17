@@ -24,14 +24,14 @@ static constexpr int MAX_TARGETS = 50;
 static constexpr int DET_DIFF_THRESHOLD = 20;
 static constexpr int DET_MIN_AREA = 20;
 static constexpr int DET_MORPH = 2;
-static constexpr double DET_DOWNSCALE = 1.0;
+static constexpr double DET_DOWNSCALE = 2.0;
 
 // Tracker settings (NO KALMAN)
-static constexpr float TRACK_IOU_TH = 0.25f;
+static constexpr float TRACK_IOU_TH = 0.4f;
 static constexpr int TRACK_MAX_MISSED_FRAMES = 3;
 
 // Merge / clustering settings
-static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 3;
+static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 1;
 static constexpr float MERGE_NEIGHBOR_IOU_TH = 0.05f;
 static constexpr float MERGE_CENTER_DIST_FACTOR = 5.5f;
 
