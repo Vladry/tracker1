@@ -17,13 +17,13 @@
 
 // ===================== TUNABLE CONSTANTS (keep in main, top) =====================
 
-// Max simultaneous targets (global constant as requested)
+// Max simultaneous targets
 static constexpr int MAX_TARGETS = 50;
 
 // Detector settings
-static constexpr int DET_DIFF_THRESHOLD = 10;
+static constexpr int DET_DIFF_THRESHOLD = 20;
 static constexpr int DET_MIN_AREA = 20;
-static constexpr int DET_MORPH = 3;
+static constexpr int DET_MORPH = 2;
 static constexpr double DET_DOWNSCALE = 1.0;
 
 // Tracker settings (NO KALMAN)
@@ -31,16 +31,12 @@ static constexpr float TRACK_IOU_TH = 0.25f;
 static constexpr int TRACK_MAX_MISSED_FRAMES = 3;
 
 // Merge / clustering settings
-// 3) How many bbox are allowed to be merged into a single resulting cluster bbox:
 static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 3;
-
-// Internal merge heuristics (kept near the merge constant for quick tuning)
-static constexpr float MERGE_NEIGHBOR_IOU_TH = 0.05f;       // treat as neighbors if overlap slightly
-static constexpr float MERGE_CENTER_DIST_FACTOR = 5.5f;     // or if centers are close (relative to size)
+static constexpr float MERGE_NEIGHBOR_IOU_TH = 0.05f;
+static constexpr float MERGE_CENTER_DIST_FACTOR = 5.5f;
 
 // Overlay settings
 static constexpr float HUD_ALPHA = 0.25f;
-// 4) Transparency for "non-selected blocks" when selection exists:
 static constexpr float UNSELECTED_ALPHA_WHEN_SELECTED = 0.3f;
 
 // RTSP settings
@@ -52,51 +48,56 @@ static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
 
 // ================================================================================
 
+// Selected target id (set by mouse, read by main loop)
 static std::atomic<int> g_selected_id{-1};
 
-static void onMouse(int event, int x, int y, int, void* userdata) {
+// ===================== Mouse callback (NON-BLOCKING) =============================
+
+static void on_mouse(int event, int x, int y, int, void* userdata) {
     if (event != cv::EVENT_LBUTTONDOWN) return;
+
     auto* tracker = static_cast<TrackerManager*>(userdata);
     if (!tracker) return;
 
     int id = tracker->pickTargetId(x, y);
     if (id > 0) {
         g_selected_id.store(id, std::memory_order_release);
-//        std::cout << "[mouse] selected id=" << id << " at " << x << "," << y << std::endl;
     }
 }
 
-static inline float iouRect(const cv::Rect2f& a, const cv::Rect2f& b) {
+// ===================== Geometry helpers =========================================
+
+static inline float iou_rect(const cv::Rect2f& a, const cv::Rect2f& b) {
     float inter = (a & b).area();
     float uni = a.area() + b.area() - inter;
-    if (uni <= 0.f) return 0.f;
-    return inter / uni;
+    return (uni > 0.f) ? (inter / uni) : 0.f;
 }
 
-static inline float centerDist(const cv::Rect2f& a, const cv::Rect2f& b) {
+static inline float center_dist(const cv::Rect2f& a, const cv::Rect2f& b) {
     float ax = a.x + a.width * 0.5f;
     float ay = a.y + a.height * 0.5f;
     float bx = b.x + b.width * 0.5f;
     float by = b.y + b.height * 0.5f;
     float dx = ax - bx;
     float dy = ay - by;
-    return std::sqrt(dx*dx + dy*dy);
+    return std::sqrt(dx * dx + dy * dy);
 }
 
-static inline float refSize(const cv::Rect2f& r) {
+static inline float ref_size(const cv::Rect2f& r) {
     return std::max(10.0f, 0.5f * (r.width + r.height));
 }
 
-// 5) Group neighboring boxes into clusters; each cluster merges into one bbox,
-//    but no more than MERGE_MAX_BOXES_IN_CLUSTER boxes may be merged together.
-static std::vector<cv::Rect2f> mergeDetections(const std::vector<cv::Rect2f>& dets) {
+// ===================== Merge detections =========================================
+
+static std::vector<cv::Rect2f> merge_detections(const std::vector<cv::Rect2f>& dets) {
     std::vector<cv::Rect2f> out;
     if (dets.empty()) return out;
 
     std::vector<int> idx(dets.size());
-    for (size_t i = 0; i < dets.size(); ++i) idx[i] = (int)i;
+    for (size_t i = 0; i < dets.size(); ++i)
+        idx[i] = (int)i;
 
-    std::sort(idx.begin(), idx.end(), [&](int ia, int ib){
+    std::sort(idx.begin(), idx.end(), [&](int ia, int ib) {
         return dets[(size_t)ia].area() > dets[(size_t)ib].area();
     });
 
@@ -123,16 +124,21 @@ static std::vector<cv::Rect2f> mergeDetections(const std::vector<cv::Rect2f>& de
                 if (used[j]) continue;
 
                 const auto& cand = dets[j];
+                float v_iou = iou_rect(merged, cand);
+                float d = center_dist(merged, cand);
+                float s = ref_size(merged);
 
-                float v_iou = iouRect(merged, cand);
-                float d = centerDist(merged, cand);
-                float s = refSize(merged);
+                bool is_neighbor =
+                        (v_iou >= MERGE_NEIGHBOR_IOU_TH) ||
+                        (d <= MERGE_CENTER_DIST_FACTOR * s);
 
-                bool is_neighbor = (v_iou >= MERGE_NEIGHBOR_IOU_TH) || (d <= MERGE_CENTER_DIST_FACTOR * s);
                 if (!is_neighbor) continue;
 
                 float score = v_iou + 0.001f * (1.0f / (1.0f + d));
-                if (score > best_score) { best_score = score; best_j = (int)j; }
+                if (score > best_score) {
+                    best_score = score;
+                    best_j = (int)j;
+                }
             }
 
             if (best_j >= 0) {
@@ -149,15 +155,16 @@ static std::vector<cv::Rect2f> mergeDetections(const std::vector<cv::Rect2f>& de
     return out;
 }
 
-int main(int argc, char *argv[]) {
+// ===================== main ======================================================
+
+int main(int argc, char* argv[]) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 
-    // always keep this line present but commented:
-    //    setenv("GST_DEBUG", "rtspsrc:6,rtsp*:6", 1);
+    // Keep but commented (as agreed):
+    // setenv("GST_DEBUG", "rtspsrc:6,rtsp*:6", 1);
 
     gst_init(&argc, &argv);
-
     std::cout << "STARTING PIPELINE..." << std::endl;
 
     FrameStore store;
@@ -172,34 +179,44 @@ int main(int argc, char *argv[]) {
     RtspWorker rtsp(store, rcfg);
     rtsp.start();
 
-    MotionDetector detector(MotionDetector::Config{
-        DET_DIFF_THRESHOLD, DET_MIN_AREA, DET_MORPH, DET_DOWNSCALE
-    });
+    MotionDetector detector({
+                                    DET_DIFF_THRESHOLD,
+                                    DET_MIN_AREA,
+                                    DET_MORPH,
+                                    DET_DOWNSCALE
+                            });
 
-    TrackerManager tracker(TrackerManager::Config{
-        TRACK_IOU_TH, TRACK_MAX_MISSED_FRAMES, MAX_TARGETS
-    });
+    TrackerManager tracker({
+                                   TRACK_IOU_TH,
+                                   TRACK_MAX_MISSED_FRAMES,
+                                   MAX_TARGETS
+                           });
 
-    OverlayRenderer overlay(OverlayRenderer::Config{
-        HUD_ALPHA, UNSELECTED_ALPHA_WHEN_SELECTED
-    });
+    OverlayRenderer overlay({
+                                    HUD_ALPHA,
+                                    UNSELECTED_ALPHA_WHEN_SELECTED
+                            });
 
     cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
-    cv::setMouseCallback("OPI5", onMouse, &tracker);
+    cv::setMouseCallback("OPI5", on_mouse, &tracker);
 
+    // ===================== MAIN LOOP (BLOCKING, EVENT-DRIVEN) =====================
     while (true) {
         cv::Mat frame;
-        if (!store.tryGetFrame(frame)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        // BLOCK here until a new frame arrives (thread sleeps)
+        if (!store.waitFrame(frame, 100)) {
+            // allow UI to process mouse events even on timeout
+            cv::pollKey();
             continue;
         }
 
         auto dets = detector.detect(frame);
-        auto merged = mergeDetections(dets);
+        auto merged = merge_detections(dets);
 
         tracker.update(merged);
 
-        // 7) If selected track disappeared, reset selection to "no selection"
+        // If selected target disappeared — clear selection
         int sel = g_selected_id.load(std::memory_order_acquire);
         if (sel > 0 && !tracker.hasTargetId(sel)) {
             g_selected_id.store(-1, std::memory_order_release);
@@ -207,11 +224,10 @@ int main(int argc, char *argv[]) {
         }
 
         overlay.render(frame, tracker.targets(), sel);
-
         cv::imshow("OPI5", frame);
 
-        // 6) No keyboard controls. Pump UI events only; ignore key codes.
-        (void)cv::waitKey(1);
+        // Pump UI events (mouse only, keyboard ignored)
+        cv::pollKey();
     }
 
     rtsp.stop();
