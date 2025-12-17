@@ -1,7 +1,6 @@
 #include <gst/gst.h>
 #include <opencv2/opencv.hpp>
-
-#include <atomic>
+#include "config.h"
 #include <chrono>
 #include <iostream>
 #include <vector>
@@ -251,6 +250,9 @@ merge_detections(const std::vector<cv::Rect2f>& dets) {
 // ===================== MAIN =====================
 
 int main(int argc, char* argv[]) {
+    AppConfig cfg;
+    load_config("config.toml", cfg);
+
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 

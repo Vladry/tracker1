@@ -9,10 +9,18 @@ pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
 
 find_package(OpenCV REQUIRED)
 
+configure_file(
+        ${CMAKE_SOURCE_DIR}/config.toml
+        ${CMAKE_BINARY_DIR}/config.toml
+        COPYONLY
+)
+
 include_directories(
         ${GST_INCLUDE_DIRS}
         ${OpenCV_INCLUDE_DIRS}
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+
 )
 
 link_directories(${GST_LIBRARY_DIRS})
@@ -32,6 +40,8 @@ add_executable(Five_Threads
         src/display_loop.cpp
         include/static_box_manager.h
         src/static_box_manager.cpp
+        include/config.h
+        src/config.cpp
 )
 
 target_link_libraries(Five_Threads
