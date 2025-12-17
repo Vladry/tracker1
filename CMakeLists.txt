@@ -30,6 +30,8 @@ add_executable(Five_Threads
         include/rate_limiter.h
         include/display_loop.h
         src/display_loop.cpp
+        include/static_box_manager.h
+        src/static_box_manager.cpp
 )
 
 target_link_libraries(Five_Threads

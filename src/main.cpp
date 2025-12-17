@@ -1,7 +1,6 @@
 #include <gst/gst.h>
 #include <opencv2/opencv.hpp>
 
-#include <thread>
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -13,59 +12,149 @@
 #include "rtsp_worker.h"
 #include "detector.h"
 #include "tracker_manager.h"
+#include "static_box_manager.h"
 #include "overlay.h"
 
-// ===================== TUNABLE CONSTANTS (keep in main, top) =====================
+// ===================== GLOBAL TUNABLE CONSTANTS =====================
+//
+// Dynamic box  = временный bbox от детектора / трекера
+// Static  box  = пользовательский bbox, созданный кликом мыши
+// ===================================================================
 
-// Max simultaneous targets
+#define SHOW_IDS = false;
+
+//------------------------------------------------------------------------------
+// Максимально допустимая кратность площади результирующего merged-бокса
+// относительно площади САМОГО КРУПНОГО динамического бокса в кластере.
+// Значение 3.0 означает, что merged-бокс не может превышать
+// площадь largest_bbox * 3.
+// Используется для ограничения разрастания merged-целей.
+static constexpr float MERGE_MAX_AREA_MULTIPLIER = 3.0f;
+
+// Константа сглаживания мелькания размеров dynamic bbox-ов: (в overlay.cpp или main.cpp)
+static constexpr int DYN_SMOOTH_WINDOW = 15;
+//------------------------------------------------------------------------------
+// Maximum number of simultaneously tracked DYNAMIC boxes.
+// Limits tracker memory usage and prevents CPU spikes on noisy scenes.
 static constexpr int MAX_TARGETS = 50;
 
-// Detector settings
-static constexpr int DET_DIFF_THRESHOLD = 20;
-static constexpr int DET_MIN_AREA = 20;
-static constexpr int DET_MORPH = 2;
-static constexpr double DET_DOWNSCALE = 2.0;
 
-// Tracker settings (NO KALMAN)
-static constexpr float TRACK_IOU_TH = 0.4f;
+//------------------------------------------------------------------------------
+// Pixel difference threshold for motion detection.
+// Lower values increase sensitivity; higher values suppress noise.
+static constexpr int DET_DIFF_THRESHOLD = 20;
+
+
+//------------------------------------------------------------------------------
+// Minimum area (in pixels) for a motion region to become a DYNAMIC box.
+static constexpr int DET_MIN_AREA = 10;
+
+
+//------------------------------------------------------------------------------
+// Morphological kernel size for cleaning the motion mask.
+static constexpr int DET_MORPH = 3;
+
+
+//------------------------------------------------------------------------------
+// Downscale factor applied before motion detection.
+// 1.0 = full resolution, < 1.0 = faster but less precise.
+static constexpr double DET_DOWNSCALE = 1.0;
+
+
+//------------------------------------------------------------------------------
+// IoU threshold for matching DYNAMIC boxes between frames.
+static constexpr float TRACK_IOU_TH = 0.25f;
+
+
+//------------------------------------------------------------------------------
+// How many consecutive frames a DYNAMIC box may be missing
+// before its track is dropped.
 static constexpr int TRACK_MAX_MISSED_FRAMES = 3;
 
-// Merge / clustering settings
-static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 1;
+
+//------------------------------------------------------------------------------
+// Maximum number of DYNAMIC boxes merged into one cluster.
+static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 2;
+
+
+//------------------------------------------------------------------------------
+// Minimal IoU at which two DYNAMIC boxes are considered neighbors.
 static constexpr float MERGE_NEIGHBOR_IOU_TH = 0.05f;
+
+
+//------------------------------------------------------------------------------
+// Center-distance factor for merging DYNAMIC boxes with weak overlap.
 static constexpr float MERGE_CENTER_DIST_FACTOR = 5.5f;
 
-// Overlay settings
+
+//------------------------------------------------------------------------------
+// Global transparency for HUD / overlay elements.
 static constexpr float HUD_ALPHA = 0.25f;
+
+
+//------------------------------------------------------------------------------
+// Transparency applied to NON-selected objects when a STATIC box exists.
 static constexpr float UNSELECTED_ALPHA_WHEN_SELECTED = 0.3f;
 
-// RTSP settings
+
+// ===================== STATIC BOX SETTINGS =====================
+
+
+//------------------------------------------------------------------------------
+// Enable automatic rebinding of STATIC box after target loss.
+static constexpr bool STATIC_AUTO_REBIND_ON_LOSS = true;
+
+
+//------------------------------------------------------------------------------
+// Time (ms) to wait before forced rebinding to a new DYNAMIC box.
+static constexpr int STATIC_REBIND_TIMEOUT_MS = 1200;
+
+
+//------------------------------------------------------------------------------
+// Minimal IoU required to keep STATIC box attached to the same parent.
+static constexpr float STATIC_PARENT_IOU_TH = 0.15f;
+
+
+//------------------------------------------------------------------------------
+// Minimal score required to reattach STATIC box before forced rebind.
+static constexpr float STATIC_REATTACH_SCORE_TH = 0.20f;
+
+
+// ===================== RTSP SETTINGS =====================
+
 static const char* RTSP_URL = "rtsp://192.168.144.25:8554/main.264";
-static constexpr int RTSP_PROTOCOLS = 1; // UDP
+static constexpr int RTSP_PROTOCOLS = 1;   // UDP
 static constexpr int RTSP_LATENCY_MS = 0;
 static constexpr guint64 RTSP_TIMEOUT_US = 2000000;
 static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
 
-// ================================================================================
 
-// Selected target id (set by mouse, read by main loop)
-static std::atomic<int> g_selected_id{-1};
+// ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
-// ===================== Mouse callback (NON-BLOCKING) =============================
+static static_box_manager* g_static_mgr = nullptr;
+static std::vector<cv::Rect2f>* g_dynamic_boxes = nullptr;
+static std::vector<int>* g_dynamic_ids = nullptr;
 
-static void on_mouse(int event, int x, int y, int, void* userdata) {
-    if (event != cv::EVENT_LBUTTONDOWN) return;
 
-    auto* tracker = static_cast<TrackerManager*>(userdata);
-    if (!tracker) return;
+// ===================== MOUSE CALLBACK =====================
 
-    int id = tracker->pickTargetId(x, y);
-    if (id > 0) {
-        g_selected_id.store(id, std::memory_order_release);
-    }
+static void on_mouse(int event, int x, int y, int, void*) {
+    if (event != cv::EVENT_LBUTTONDOWN)
+        return;
+
+    if (!g_static_mgr || !g_dynamic_boxes || !g_dynamic_ids)
+        return;
+
+    g_static_mgr->on_mouse_click(
+            x,
+            y,
+            *g_dynamic_boxes,
+            *g_dynamic_ids
+    );
 }
 
-// ===================== Geometry helpers =========================================
+
+// ===================== GEOMETRY HELPERS =====================
 
 static inline float iou_rect(const cv::Rect2f& a, const cv::Rect2f& b) {
     float inter = (a & b).area();
@@ -87,54 +176,57 @@ static inline float ref_size(const cv::Rect2f& r) {
     return std::max(10.0f, 0.5f * (r.width + r.height));
 }
 
-// ===================== Merge detections =========================================
 
-static std::vector<cv::Rect2f> merge_detections(const std::vector<cv::Rect2f>& dets) {
+// ===================== MERGE DYNAMIC BOXES =====================
+
+static std::vector<cv::Rect2f>
+merge_detections(const std::vector<cv::Rect2f>& dets) {
     std::vector<cv::Rect2f> out;
-    if (dets.empty()) return out;
+    if (dets.empty())
+        return out;
 
     std::vector<int> idx(dets.size());
     for (size_t i = 0; i < dets.size(); ++i)
         idx[i] = (int)i;
 
-    std::sort(idx.begin(), idx.end(), [&](int ia, int ib) {
-        return dets[(size_t)ia].area() > dets[(size_t)ib].area();
-    });
+    std::sort(idx.begin(), idx.end(),
+              [&](int a, int b) {
+                  return dets[a].area() > dets[b].area();
+              });
 
     std::vector<char> used(dets.size(), 0);
 
-    for (int seed_i : idx) {
-        if (used[(size_t)seed_i]) continue;
+    for (int seed : idx) {
+        if (used[seed])
+            continue;
 
-        std::vector<int> cluster;
-        cluster.reserve((size_t)MERGE_MAX_BOXES_IN_CLUSTER);
-        cluster.push_back(seed_i);
-        used[(size_t)seed_i] = 1;
-
-        cv::Rect2f merged = dets[(size_t)seed_i];
+        cv::Rect2f merged = dets[seed];
+        used[seed] = 1;
 
         bool grew = true;
-        while (grew && (int)cluster.size() < MERGE_MAX_BOXES_IN_CLUSTER) {
-            grew = false;
+        int merged_count = 1;
 
+        while (grew && merged_count < MERGE_MAX_BOXES_IN_CLUSTER) {
+            grew = false;
             int best_j = -1;
             float best_score = 0.f;
 
             for (size_t j = 0; j < dets.size(); ++j) {
-                if (used[j]) continue;
+                if (used[j])
+                    continue;
 
-                const auto& cand = dets[j];
-                float v_iou = iou_rect(merged, cand);
-                float d = center_dist(merged, cand);
+                float v_iou = iou_rect(merged, dets[j]);
+                float d = center_dist(merged, dets[j]);
                 float s = ref_size(merged);
 
-                bool is_neighbor =
+                bool neighbor =
                         (v_iou >= MERGE_NEIGHBOR_IOU_TH) ||
                         (d <= MERGE_CENTER_DIST_FACTOR * s);
 
-                if (!is_neighbor) continue;
+                if (!neighbor)
+                    continue;
 
-                float score = v_iou + 0.001f * (1.0f / (1.0f + d));
+                float score = v_iou + 0.001f / (1.0f + d);
                 if (score > best_score) {
                     best_score = score;
                     best_j = (int)j;
@@ -142,9 +234,9 @@ static std::vector<cv::Rect2f> merge_detections(const std::vector<cv::Rect2f>& d
             }
 
             if (best_j >= 0) {
-                used[(size_t)best_j] = 1;
-                cluster.push_back(best_j);
-                merged = merged | dets[(size_t)best_j];
+                used[best_j] = 1;
+                merged |= dets[best_j];
+                merged_count++;
                 grew = true;
             }
         }
@@ -155,14 +247,12 @@ static std::vector<cv::Rect2f> merge_detections(const std::vector<cv::Rect2f>& d
     return out;
 }
 
-// ===================== main ======================================================
+
+// ===================== MAIN =====================
 
 int main(int argc, char* argv[]) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
-
-    // Keep but commented (as agreed):
-    // setenv("GST_DEBUG", "rtspsrc:6,rtsp*:6", 1);
 
     gst_init(&argc, &argv);
     std::cout << "STARTING PIPELINE..." << std::endl;
@@ -197,16 +287,29 @@ int main(int argc, char* argv[]) {
                                     UNSELECTED_ALPHA_WHEN_SELECTED
                             });
 
-    cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
-    cv::setMouseCallback("OPI5", on_mouse, &tracker);
+    static_box_manager static_mgr({
+                                          STATIC_AUTO_REBIND_ON_LOSS,
+                                          STATIC_REBIND_TIMEOUT_MS,
+                                          STATIC_PARENT_IOU_TH,
+                                          STATIC_REATTACH_SCORE_TH
+                                  });
 
-    // ===================== MAIN LOOP (BLOCKING, EVENT-DRIVEN) =====================
+    cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
+
+    std::vector<cv::Rect2f> dynamic_boxes;
+    std::vector<int> dynamic_ids;
+
+    g_static_mgr = &static_mgr;
+    g_dynamic_boxes = &dynamic_boxes;
+    g_dynamic_ids = &dynamic_ids;
+
+    cv::setMouseCallback("OPI5", on_mouse, nullptr);
+
+    // ===================== MAIN LOOP (BLOCKING) =====================
     while (true) {
         cv::Mat frame;
 
-        // BLOCK here until a new frame arrives (thread sleeps)
         if (!store.waitFrame(frame, 100)) {
-            // allow UI to process mouse events even on timeout
             cv::pollKey();
             continue;
         }
@@ -216,17 +319,19 @@ int main(int argc, char* argv[]) {
 
         tracker.update(merged);
 
-        // If selected target disappeared — clear selection
-        int sel = g_selected_id.load(std::memory_order_acquire);
-        if (sel > 0 && !tracker.hasTargetId(sel)) {
-            g_selected_id.store(-1, std::memory_order_release);
-            sel = -1;
+        dynamic_boxes.clear();
+        dynamic_ids.clear();
+        for (const auto& t : tracker.targets()) {
+            dynamic_boxes.emplace_back(cv::Rect2f(t.bbox));
+            dynamic_ids.push_back(t.id);
         }
 
-        overlay.render(frame, tracker.targets(), sel);
-        cv::imshow("OPI5", frame);
+        static_mgr.update(dynamic_boxes, dynamic_ids);
 
-        // Pump UI events (mouse only, keyboard ignored)
+        overlay.render(frame, tracker.targets(), -1);
+        overlay.render_static_boxes(frame, static_mgr.boxes());
+
+        cv::imshow("OPI5", frame);
         cv::pollKey();
     }
 
