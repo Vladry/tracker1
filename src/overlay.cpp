@@ -1,4 +1,5 @@
 #include "overlay.h"
+#include <algorithm>
 
 OverlayRenderer::OverlayRenderer(const Config& cfg) : cfg_(cfg) {}
 
@@ -34,19 +35,40 @@ void OverlayRenderer::drawCornerTables(cv::Mat& overlay, const Target* sel) {
         double az = sel ? sel->azimuth_deg : 0.0;
         double el = sel ? sel->elevation_deg : 0.0;
         double dist = sel ? sel->distance_m : 0.0;
-        double sx = sel ? sel->speedX_mps : 0.0;
-        double sy = sel ? sel->speedY_mps : 0.0;
         int id = sel ? sel->id : 0;
 
         putKeyVal(overlay, x, y + 0*row,  "ID", std::to_string(id));
         putKeyVal(overlay, x, y + 1*row,  "Azimuth (deg)", cv::format("%.2f", az));
         putKeyVal(overlay, x, y + 2*row,  "Elevation (deg)", cv::format("%.2f", el));
         putKeyVal(overlay, x, y + 3*row,  "Distance (m)", cv::format("%.2f", dist));
-        putKeyVal(overlay, x, y + 4*row,  "SpeedX", cv::format("%.2f", sx));
-        putKeyVal(overlay, x, y + 5*row,  "SpeedY", cv::format("%.2f", sy));
+        putKeyVal(overlay, x, y + 4*row,  "SpeedX", cv::format("%.2f", 0.0));
+        putKeyVal(overlay, x, y + 5*row,  "SpeedY", cv::format("%.2f", 0.0));
         putKeyVal(overlay, x, y + 6*row,  "dAz/dt", cv::format("%.2f", 0.0));
         putKeyVal(overlay, x, y + 7*row,  "dEl/dt", cv::format("%.2f", 0.0));
     }
+}
+
+void OverlayRenderer::drawTargetBoxBlended(cv::Mat& frame_bgr,
+                                          const Target& t,
+                                          bool is_selected,
+                                          bool selection_exists) {
+    if (frame_bgr.empty()) return;
+
+    cv::Mat overlay = frame_bgr.clone();
+
+    cv::Scalar col = is_selected ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0);
+    cv::rectangle(overlay, t.bbox, col, 2, cv::LINE_AA);
+
+    std::string label = "ID=" + std::to_string(t.id);
+    cv::putText(overlay, label,
+                cv::Point((int)t.bbox.x, (int)std::max(0.f, t.bbox.y - 4.f)),
+                cv::FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv::LINE_AA);
+
+    float a = 1.0f;
+    if (selection_exists && !is_selected) {
+        a = std::min(1.f, std::max(0.f, cfg_.unselected_alpha_when_selected));
+    }
+    cv::addWeighted(overlay, a, frame_bgr, 1.f - a, 0.0, frame_bgr);
 }
 
 void OverlayRenderer::render(cv::Mat& frame_bgr,
@@ -54,22 +76,18 @@ void OverlayRenderer::render(cv::Mat& frame_bgr,
                             int selected_id) {
     if (frame_bgr.empty()) return;
 
-    cv::Mat overlay = frame_bgr.clone();
-
     const Target* selected = nullptr;
     for (const auto& t : targets) if (t.id == selected_id) { selected = &t; break; }
+    const bool selection_exists = (selected != nullptr);
 
     for (const auto& t : targets) {
-        if (cfg_.hide_others_when_selected && selected_id > 0 && t.id != selected_id) continue;
-        cv::Scalar col = (t.id == selected_id) ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0);
-        cv::rectangle(overlay, t.bbox, col, 2, cv::LINE_AA);
-        std::string label = "ID=" + std::to_string(t.id);
-        cv::putText(overlay, label, cv::Point((int)t.bbox.x, (int)std::max(0.f, t.bbox.y - 4.f)),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv::LINE_AA);
+        drawTargetBoxBlended(frame_bgr, t, t.id == selected_id, selection_exists);
     }
 
-    drawCornerTables(overlay, selected);
-
-    float a = std::min(1.f, std::max(0.f, cfg_.alpha));
-    cv::addWeighted(overlay, a, frame_bgr, 1.f - a, 0.0, frame_bgr);
+    if (cfg_.hud_alpha > 0.0f) {
+        cv::Mat hud = frame_bgr.clone();
+        drawCornerTables(hud, selected);
+        float a = std::min(1.f, std::max(0.f, cfg_.hud_alpha));
+        cv::addWeighted(hud, a, frame_bgr, 1.f - a, 0.0, frame_bgr);
+    }
 }
