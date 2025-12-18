@@ -14,119 +14,12 @@
 #include "static_box_manager.h"
 #include "overlay.h"
 
-// ===================== GLOBAL TUNABLE CONSTANTS =====================
+// ===================== НАСТРОЕЧНЫЕ ПАРАМЕТРЫ =====================
 //
-// Dynamic box  = временный bbox от детектора / трекера
-// Static  box  = пользовательский bbox, созданный кликом мыши
+// ВАЖНО: в этом файле не должно быть магических тюнинговых констант.
+// Все параметры, влияющие на поведение (пороги, таймауты, веса, лимиты, RTSP),
+// находятся в config.toml и загружаются в AppConfig (см. include/config.h).
 // ===================================================================
-
-#define SHOW_IDS = false;
-
-//------------------------------------------------------------------------------
-// Максимально допустимая кратность площади результирующего merged-бокса
-// относительно площади САМОГО КРУПНОГО динамического бокса в кластере.
-// Значение 3.0 означает, что merged-бокс не может превышать
-// площадь largest_bbox * 3.
-// Используется для ограничения разрастания merged-целей.
-static constexpr float MERGE_MAX_AREA_MULTIPLIER = 3.0f;
-
-// Константа сглаживания мелькания размеров dynamic bbox-ов: (в overlay.cpp или main.cpp)
-static constexpr int DYN_SMOOTH_WINDOW = 15;
-//------------------------------------------------------------------------------
-// Maximum number of simultaneously tracked DYNAMIC boxes.
-// Limits tracker memory usage and prevents CPU spikes on noisy scenes.
-static constexpr int MAX_TARGETS = 50;
-
-
-//------------------------------------------------------------------------------
-// Pixel difference threshold for motion detection.
-// Lower values increase sensitivity; higher values suppress noise.
-static constexpr int DET_DIFF_THRESHOLD = 20;
-
-
-//------------------------------------------------------------------------------
-// Minimum area (in pixels) for a motion region to become a DYNAMIC box.
-static constexpr int DET_MIN_AREA = 10;
-
-
-//------------------------------------------------------------------------------
-// Morphological kernel size for cleaning the motion mask.
-static constexpr int DET_MORPH = 3;
-
-
-//------------------------------------------------------------------------------
-// Downscale factor applied before motion detection.
-// 1.0 = full resolution, < 1.0 = faster but less precise.
-static constexpr double DET_DOWNSCALE = 1.0;
-
-
-//------------------------------------------------------------------------------
-// IoU threshold for matching DYNAMIC boxes between frames.
-static constexpr float TRACK_IOU_TH = 0.25f;
-
-
-//------------------------------------------------------------------------------
-// How many consecutive frames a DYNAMIC box may be missing
-// before its track is dropped.
-static constexpr int TRACK_MAX_MISSED_FRAMES = 3;
-
-
-//------------------------------------------------------------------------------
-// Maximum number of DYNAMIC boxes merged into one cluster.
-static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 2;
-
-
-//------------------------------------------------------------------------------
-// Minimal IoU at which two DYNAMIC boxes are considered neighbors.
-static constexpr float MERGE_NEIGHBOR_IOU_TH = 0.05f;
-
-
-//------------------------------------------------------------------------------
-// Center-distance factor for merging DYNAMIC boxes with weak overlap.
-static constexpr float MERGE_CENTER_DIST_FACTOR = 5.5f;
-
-
-//------------------------------------------------------------------------------
-// Global transparency for HUD / overlay elements.
-static constexpr float HUD_ALPHA = 0.25f;
-
-
-//------------------------------------------------------------------------------
-// Transparency applied to NON-selected objects when a STATIC box exists.
-static constexpr float UNSELECTED_ALPHA_WHEN_SELECTED = 0.3f;
-
-
-// ===================== STATIC BOX SETTINGS =====================
-
-
-//------------------------------------------------------------------------------
-// Enable automatic rebinding of STATIC box after target loss.
-static constexpr bool STATIC_AUTO_REBIND_ON_LOSS = true;
-
-
-//------------------------------------------------------------------------------
-// Time (ms) to wait before forced rebinding to a new DYNAMIC box.
-static constexpr int STATIC_REBIND_TIMEOUT_MS = 1200;
-
-
-//------------------------------------------------------------------------------
-// Minimal IoU required to keep STATIC box attached to the same parent.
-static constexpr float STATIC_PARENT_IOU_TH = 0.15f;
-
-
-//------------------------------------------------------------------------------
-// Minimal score required to reattach STATIC box before forced rebind.
-static constexpr float STATIC_REATTACH_SCORE_TH = 0.20f;
-
-
-// ===================== RTSP SETTINGS =====================
-
-static const char* RTSP_URL = "rtsp://192.168.144.25:8554/main.264";
-static constexpr int RTSP_PROTOCOLS = 1;   // UDP
-static constexpr int RTSP_LATENCY_MS = 0;
-static constexpr guint64 RTSP_TIMEOUT_US = 2000000;
-static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
-
 
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
@@ -179,7 +72,7 @@ static inline float ref_size(const cv::Rect2f& r) {
 // ===================== MERGE DYNAMIC BOXES =====================
 
 static std::vector<cv::Rect2f>
-merge_detections(const std::vector<cv::Rect2f>& dets) {
+merge_detections(const std::vector<cv::Rect2f>& dets, const AppConfig::Merge& mcfg) {
     std::vector<cv::Rect2f> out;
     if (dets.empty())
         return out;
@@ -200,12 +93,13 @@ merge_detections(const std::vector<cv::Rect2f>& dets) {
             continue;
 
         cv::Rect2f merged = dets[seed];
+        const float seed_area = dets[seed].area();  // площадь самого крупного bbox в кластере (seed)
         used[seed] = 1;
 
         bool grew = true;
         int merged_count = 1;
 
-        while (grew && merged_count < MERGE_MAX_BOXES_IN_CLUSTER) {
+        while (grew && merged_count < mcfg.max_boxes_in_cluster) {
             grew = false;
             int best_j = -1;
             float best_score = 0.f;
@@ -219,8 +113,8 @@ merge_detections(const std::vector<cv::Rect2f>& dets) {
                 float s = ref_size(merged);
 
                 bool neighbor =
-                        (v_iou >= MERGE_NEIGHBOR_IOU_TH) ||
-                        (d <= MERGE_CENTER_DIST_FACTOR * s);
+                        (v_iou >= mcfg.neighbor_iou_th) ||
+                        (d <= mcfg.center_dist_factor * s);
 
                 if (!neighbor)
                     continue;
@@ -233,10 +127,15 @@ merge_detections(const std::vector<cv::Rect2f>& dets) {
             }
 
             if (best_j >= 0) {
-                used[best_j] = 1;
-                merged |= dets[best_j];
-                merged_count++;
-                grew = true;
+                // Пытаемся расширить merged-бокс, но не даём ему разрастись сверх лимита площади.
+                // Это защита от "слипания" множества целей в один огромный bbox.
+                const cv::Rect2f tentative = (merged | dets[best_j]);
+                if (tentative.area() <= seed_area * mcfg.max_area_multiplier) {
+                    used[best_j] = 1;
+                    merged = tentative;
+                    merged_count++;
+                    grew = true;
+                }
             }
         }
 
@@ -262,39 +161,46 @@ int main(int argc, char* argv[]) {
     FrameStore store;
 
     RtspWorker::Config rcfg;
-    rcfg.url = RTSP_URL;
-    rcfg.protocols = RTSP_PROTOCOLS;
-    rcfg.latency_ms = RTSP_LATENCY_MS;
-    rcfg.timeout_us = RTSP_TIMEOUT_US;
-    rcfg.tcp_timeout_us = RTSP_TCP_TIMEOUT_US;
+    // ---------------- RTSP (всё берём из config.toml) ----------------
+    rcfg.url = cfg.rtsp.url;
+    rcfg.protocols = cfg.rtsp.protocols;
+    rcfg.latency_ms = cfg.rtsp.latency_ms;
+    rcfg.timeout_us = cfg.rtsp.timeout_us;
+    rcfg.tcp_timeout_us = cfg.rtsp.tcp_timeout_us;
+    rcfg.caps_force = cfg.rtsp.caps_force;
+    rcfg.verbose = cfg.rtsp.verbose;
 
     RtspWorker rtsp(store, rcfg);
     rtsp.start();
 
-    MotionDetector detector({
-                                    DET_DIFF_THRESHOLD,
-                                    DET_MIN_AREA,
-                                    DET_MORPH,
-                                    DET_DOWNSCALE
-                            });
+    // ---------------- Детектор движения (config.toml -> [detector]) ----------------
+    MotionDetector detector(MotionDetector::Config{
+            cfg.detector.diff_threshold,
+            cfg.detector.min_area,
+            cfg.detector.morph_kernel,
+            cfg.detector.downscale
+    });
 
-    TrackerManager tracker({
-                                   TRACK_IOU_TH,
-                                   TRACK_MAX_MISSED_FRAMES,
-                                   MAX_TARGETS
-                           });
+    // ---------------- Трекер (config.toml -> [tracker]) ----------------
+    TrackerManager tracker(TrackerManager::Config{
+            cfg.tracker.iou_th,
+            cfg.tracker.max_missed_frames,
+            cfg.tracker.max_targets
+    });
 
-    OverlayRenderer overlay({
-                                    HUD_ALPHA,
-                                    UNSELECTED_ALPHA_WHEN_SELECTED
-                            });
+    // ---------------- Оверлей (config.toml -> [overlay]) ----------------
+    OverlayRenderer overlay(OverlayRenderer::Config{
+            cfg.overlay.hud_alpha,
+            cfg.overlay.unselected_alpha_when_selected
+    });
 
-    static_box_manager static_mgr({
-                                          STATIC_AUTO_REBIND_ON_LOSS,
-                                          STATIC_REBIND_TIMEOUT_MS,
-                                          STATIC_PARENT_IOU_TH,
-                                          STATIC_REATTACH_SCORE_TH
-                                  });
+    // ---------------- Static bbox manager (config.toml -> [static_rebind]) ----------------
+    static_box_manager static_mgr(static_box_config{
+            cfg.static_rebind.auto_rebind,
+            cfg.static_rebind.rebind_timeout_ms,
+            cfg.static_rebind.parent_iou_th,
+            cfg.static_rebind.reattach_score_th
+    });
 
     cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
 
@@ -317,7 +223,7 @@ int main(int argc, char* argv[]) {
         }
 
         auto dets = detector.detect(frame);
-        auto merged = merge_detections(dets);
+        auto merged = merge_detections(dets, cfg.merge);
 
         tracker.update(merged);
 
