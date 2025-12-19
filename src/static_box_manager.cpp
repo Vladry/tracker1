@@ -26,6 +26,9 @@ void static_box_manager::on_mouse_click(
 ) {
     for (size_t i = 0; i < boxes.size(); ++i) {
         if (boxes[i].contains(cv::Point2f((float)x, (float)y))) {
+            // Single-select: keep exactly ONE static (red) box.
+            boxes_.clear();
+
             static_box sb;
             sb.id = next_id_++;
             sb.rect = boxes[i];
