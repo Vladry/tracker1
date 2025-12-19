@@ -1,7 +1,7 @@
 #include "display_loop.h"
 
 #include <opencv2/opencv.hpp>
-
+#include "other_handlers.h"
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -39,6 +39,11 @@ void DisplayLoop::run()
     std::cout << "[DISPLAY] DisplayLoop started" << std::endl;
 
     cv::namedWindow(cfg_.window_name, cv::WINDOW_NORMAL);
+
+    // восстановление выбора цели мышью (красный bbox)
+    extern void on_mouse(int event, int x, int y, int flags, void* userdata);
+    cv::setMouseCallback(cfg_.window_name, on_mouse, nullptr);
+
 
     cv::Mat frame;
     cv::Mat prime(64, 64, CV_8UC3, cv::Scalar(0, 0, 0));

@@ -16,6 +16,7 @@
 #include <atomic>
 #include <thread>
 #include "display_loop.h"
+#include "other_handlers.h"
 
 // ===================== GLOBAL TUNABLE CONSTANTS =====================
 //
@@ -161,7 +162,7 @@ static std::vector<int>* g_dynamic_ids = nullptr;
 
 // ===================== MOUSE CALLBACK =====================
 
-static void on_mouse(int event, int x, int y, int, void*) {
+ void on_mouse(int event, int x, int y, int, void*) {
     if (event != cv::EVENT_LBUTTONDOWN)
         return;
 

@@ -37,6 +37,7 @@ add_executable(Five_Threads
         src/display_loop.cpp
         src/static_box_manager.cpp
         src/config.cpp
+        include/other_handlers.h
 )
 
 target_link_libraries(Five_Threads
