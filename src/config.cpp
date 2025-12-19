@@ -38,6 +38,18 @@ bool load_config(const std::string& path, AppConfig& cfg) {
         if (auto v = tbl["rtsp"]["verbose"].value<bool>())
             cfg.rtsp.verbose = *v;
 
+
+        // ----------------------- [rtsp.watchdog] -----------------------
+        // Watchdog перезапуска RTSP, если кадры перестали приходить.
+        if (auto v = tbl["rtsp"]["watchdog"]["no_frame_timeout_ms"].value<std::uint64_t>())
+            cfg.rtsp_watchdog.no_frame_timeout_ms = *v;
+
+        if (auto v = tbl["rtsp"]["watchdog"]["restart_cooldown_ms"].value<std::uint64_t>())
+            cfg.rtsp_watchdog.restart_cooldown_ms = *v;
+
+        if (auto v = tbl["rtsp"]["watchdog"]["startup_grace_ms"].value<std::uint64_t>())
+            cfg.rtsp_watchdog.startup_grace_ms = *v;
+
         // --------------------------- [detector] ---------------------------
         if (auto v = tbl["detector"]["diff_threshold"].value<int>())
             cfg.detector.diff_threshold = *v;
