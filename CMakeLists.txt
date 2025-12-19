@@ -34,13 +34,8 @@ add_executable(Five_Threads
         src/tracker_manager.cpp
         src/overlay.cpp
         src/offset_calculator.cpp
-        include/blocking_queue.h
-        include/rate_limiter.h
-        include/display_loop.h
         src/display_loop.cpp
-        include/static_box_manager.h
         src/static_box_manager.cpp
-        include/config.h
         src/config.cpp
 )
 

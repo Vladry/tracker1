@@ -4,6 +4,12 @@
 #include "frame_store.h"
 #include "rate_limiter.h"
 
+
+// Глобальные флаги (определены в main.cpp)
+extern std::atomic<bool> g_running;
+extern std::atomic<bool> g_rtsp_restart_requested;
+
+
 // DisplayLoop: пример "правильного" UI-потока.
 // 1) ждёт кадр через FrameStore::waitFrame (поток спит)
 // 2) рисует и вызывает pollKey()
@@ -16,14 +22,17 @@ public:
         std::string window_name = "video";
     };
 
-    DisplayLoop(FrameStore& frames, std::atomic<bool>& stop_flag, Config cfg)
-            : frames_(frames), stop_(stop_flag), cfg_(std::move(cfg)), limiter_(cfg_.target_fps) {}
+    // Базовый конструктор — дефолтная конфигурация
+    explicit DisplayLoop(FrameStore& frames);
+
+
+    // Расширенный конструктор — явная конфигурация
+    DisplayLoop(FrameStore& frames, const Config& cfg);
 
     void run();
 
 private:
     FrameStore& frames_;
-    std::atomic<bool>& stop_;
     Config cfg_;
     RateLimiter limiter_;
 };

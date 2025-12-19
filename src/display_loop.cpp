@@ -1,36 +1,85 @@
 #include "display_loop.h"
 
+#include <opencv2/opencv.hpp>
+
 #include <atomic>
+#include <chrono>
 #include <iostream>
 
-// Флаги из main.cpp (UI ставит, control-thread читает)
+// Глобальные флаги (определены в main.cpp)
 extern std::atomic<bool> g_running;
 extern std::atomic<bool> g_rtsp_restart_requested;
 
-void DisplayLoop::run() {
+// -------------------------------------------------
+// Конструкторы (СИНХРОНИЗИРОВАНЫ с display_loop.h)
+// -------------------------------------------------
+
+// Дефолтная конфигурация
+DisplayLoop::DisplayLoop(FrameStore& frames)
+        : frames_(frames),
+          cfg_(),
+          limiter_(cfg_.target_fps)
+{
+}
+
+// Явная конфигурация
+DisplayLoop::DisplayLoop(FrameStore& frames, const Config& cfg)
+        : frames_(frames),
+          cfg_(cfg),
+          limiter_(cfg_.target_fps)
+{
+}
+
+// -------------------------------------------------
+// UI loop
+// -------------------------------------------------
+
+void DisplayLoop::run()
+{
+    std::cout << "[DISPLAY] DisplayLoop started" << std::endl;
+
     cv::namedWindow(cfg_.window_name, cv::WINDOW_NORMAL);
 
     cv::Mat frame;
-    while (g_running.load(std::memory_order_relaxed) && !stop_.load(std::memory_order_relaxed)) {
+    cv::Mat prime(64, 64, CV_8UC3, cv::Scalar(0, 0, 0));
+    bool window_primed = false;
+
+    while (g_running.load(std::memory_order_relaxed)) {
+
+        // Ждём кадр из FrameStore (реальный API)
         const bool ok = frames_.waitFrame(frame, cfg_.wait_frame_ms);
 
-        // Даже если кадра нет — UI поток не должен крутиться. waitFrame уже "усыпляет".
         if (ok && !frame.empty()) {
+            if (!window_primed) {
+                window_primed = true;
+                std::cout << "[DISPLAY] first frame received" << std::endl;
+            }
             cv::imshow(cfg_.window_name, frame);
+        } else if (!window_primed) {
+            // Прокачиваем окно, чтобы клавиатура заработала
+            cv::imshow(cfg_.window_name, prime);
+            window_primed = true;
+            std::cout << "[DISPLAY] window primed (no frames yet)" << std::endl;
         }
 
-        // Без waitKey (не блокируемся здесь), но даём OpenCV обработать события.
-        int key = cv::pollKey();
+        int key_raw = cv::waitKey(1);
+        int key = (key_raw >= 0) ? (key_raw & 0xFF) : -1;
+
         if (key == 27) { // ESC
-            std::cout << "[KEY] ESC -> выход из приложения" << std::endl;
+            std::cout << "[KEY] ESC -> shutdown requested" << std::endl;
             g_running.store(false, std::memory_order_relaxed);
-            stop_.store(true, std::memory_order_relaxed);
-        } else if (key == 'r' || key == 'R') {
-            std::cout << "[KEY] RTSP restart requested" << std::endl;
+            break;
+        }
+
+        if (key == 'r' || key == 'R') {
+            std::cout << "[KEY] R -> RTSP restart requested" << std::endl;
             g_rtsp_restart_requested.store(true, std::memory_order_relaxed);
         }
 
-        // Ограничиваем FPS — это часто главный фикс "86% CPU в main thread".
+        // Ограничение FPS UI (реальный API)
         limiter_.tick();
     }
+
+    cv::destroyWindow(cfg_.window_name);
+    std::cout << "[DISPLAY] DisplayLoop finished" << std::endl;
 }

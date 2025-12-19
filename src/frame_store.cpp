@@ -8,18 +8,18 @@ void FrameStore::setFrame(cv::Mat&& frame) {
         has_frame_ = true;
         ++seq_;
     }
-    cv_.notify_one();
+    cv_.notify_all();   // <-- важно
 }
 
 void FrameStore::pushFrame(const cv::Mat& frame) {
     {
         std::lock_guard<std::mutex> lk(m_);
         if (stop_) return;
-        last_ = frame; // shallow copy (refcount); если нужно "жёстко" - используйте clone() снаружи
+        last_ = frame;
         has_frame_ = true;
         ++seq_;
     }
-    cv_.notify_one();
+    cv_.notify_all();   // <-- важно
 }
 
 bool FrameStore::waitFrame(cv::Mat& out, int timeout_ms) {

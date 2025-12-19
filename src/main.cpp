@@ -15,6 +15,7 @@
 #include "overlay.h"
 #include <atomic>
 #include <thread>
+#include "display_loop.h"
 
 // ===================== GLOBAL TUNABLE CONSTANTS =====================
 //
@@ -282,7 +283,8 @@ int main(int argc, char* argv[]) {
     gst_init(&argc, &argv);
     std::cout << "STARTING PIPELINE..." << std::endl;
 
-    FrameStore store;
+    FrameStore raw_store;
+    FrameStore ui_store;
 
     RtspWorker::Config rcfg;
     rcfg.url = RTSP_URL;
@@ -291,7 +293,7 @@ int main(int argc, char* argv[]) {
     rcfg.timeout_us = RTSP_TIMEOUT_US;
     rcfg.tcp_timeout_us = RTSP_TCP_TIMEOUT_US;
 
-    RtspWorker rtsp(store, rcfg);
+    RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();
 
     // =====================================================================
@@ -370,9 +372,6 @@ int main(int argc, char* argv[]) {
                                           STATIC_PARENT_IOU_TH,
                                           STATIC_REATTACH_SCORE_TH
                                   });
-
-    cv::namedWindow("OPI5", cv::WINDOW_NORMAL);
-
     std::vector<cv::Rect2f> dynamic_boxes;
     std::vector<int> dynamic_ids;
 
@@ -380,64 +379,54 @@ int main(int argc, char* argv[]) {
     g_dynamic_boxes = &dynamic_boxes;
     g_dynamic_ids = &dynamic_ids;
 
-    cv::setMouseCallback("OPI5", on_mouse, nullptr);
-
-    // ===================== MAIN LOOP (BLOCKING) =====================
-    while (g_running.load(std::memory_order_relaxed)) {
+    // ---------------- TRACKER WORKER (из старого while, без UI) ----------------
+    std::thread tracker_thread([&]() {
         cv::Mat frame;
+        while (g_running.load(std::memory_order_relaxed)) {
 
-        if (!store.waitFrame(frame, 100)) {
-            // Нет нового кадра (timeout). UI события всё равно нужно прокачивать,
-            // но НЕ блокировать поток.
-            int key = cv::pollKey();
-            if (key == 27) { // ESC
-                std::cout << "[KEY] ESC -> выход из приложения" << std::endl;
-                g_running.store(false, std::memory_order_relaxed);
-            } else if (key == 'r' || key == 'R') {
-                std::cout << "[KEY] RTSP restart requested" << std::endl;
-                g_rtsp_restart_requested.store(true, std::memory_order_relaxed);
+            if (!raw_store.waitFrame(frame, 100)) {
+                continue;
             }
-            continue;
+
+            // Кадр получен: обновляем таймер watchdog-а.
+            g_last_frame_ms.store(now_steady_ms(), std::memory_order_relaxed);
+
+            auto dets = detector.detect(frame);
+            auto merged = merge_detections(dets);
+
+            tracker.update(merged);
+
+            dynamic_boxes.clear();
+            dynamic_ids.clear();
+            for (const auto& t : tracker.targets()) {
+                dynamic_boxes.emplace_back(cv::Rect2f(t.bbox));
+                dynamic_ids.push_back(t.id);
+            }
+
+            static_mgr.update(dynamic_boxes, dynamic_ids);
+
+            overlay.render(frame, tracker.targets(), -1);
+            overlay.render_static_boxes(frame, static_mgr.boxes());
+
+            // Публикуем кадр с overlay для UI (отдельный store => нет "саморазгона")
+            ui_store.setFrame(std::move(frame));
         }
+        std::cout << "[TRK] tracker thread exit" << std::endl;
+    });
 
-        // Кадр получен: обновляем таймер watchdog-а.
-        g_last_frame_ms.store(now_steady_ms(), std::memory_order_relaxed);
+    DisplayLoop display_loop(ui_store);
+    display_loop.run();   // ЕДИНСТВЕННЫЙ UI-LOOP
+
+    if (tracker_thread.joinable()) tracker_thread.join();
 
 
-        auto dets = detector.detect(frame);
-        auto merged = merge_detections(dets);
-
-        tracker.update(merged);
-
-        dynamic_boxes.clear();
-        dynamic_ids.clear();
-        for (const auto& t : tracker.targets()) {
-            dynamic_boxes.emplace_back(cv::Rect2f(t.bbox));
-            dynamic_ids.push_back(t.id);
-        }
-
-        static_mgr.update(dynamic_boxes, dynamic_ids);
-
-        overlay.render(frame, tracker.targets(), -1);
-        overlay.render_static_boxes(frame, static_mgr.boxes());
-
-        cv::imshow("OPI5", frame);
-        int key = cv::pollKey();
-        if (key == 27) { // ESC
-            std::cout << "[KEY] ESC -> выход из приложения" << std::endl;
-            g_running.store(false, std::memory_order_relaxed);
-        } else if (key == 'r' || key == 'R') {
-            std::cout << "[KEY] RTSP restart requested" << std::endl;
-            g_rtsp_restart_requested.store(true, std::memory_order_relaxed);
-        }
-}
-
-    // Запрос на остановку RTSP/потоков уже выставлен через g_running.
+// Запрос на остановку RTSP/потоков уже выставлен через g_running.
     // Аккуратно завершаем RTSP.
     rtsp.stop();
 
     // Будим возможные ожидания по кадрам.
-    store.stop();
+    raw_store.stop();
+    ui_store.stop();
 
     // Дожидаемся control-потока, чтобы он не работал с rtsp после уничтожения.
     if (control_thread.joinable()) control_thread.join();
