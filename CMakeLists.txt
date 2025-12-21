@@ -1,37 +1,47 @@
 cmake_minimum_required(VERSION 3.16)
-project(opi5_tracker_refactored CXX)
+project(Five_Threads LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
+
 find_package(OpenCV REQUIRED)
 
+configure_file(
+        ${CMAKE_SOURCE_DIR}/config.toml
+        ${CMAKE_BINARY_DIR}/config.toml
+        COPYONLY
+)
+
 include_directories(
-    ${GST_INCLUDE_DIRS}
-    ${OpenCV_INCLUDE_DIRS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${GST_INCLUDE_DIRS}
+        ${OpenCV_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
+
 )
 
 link_directories(${GST_LIBRARY_DIRS})
+add_definitions(${GST_CFLAGS_OTHER})
 
-add_executable(opi5_tracker
-    src/main.cpp
-    src/core/frame_store.cpp
-    src/rtsp/rtsp_worker.cpp
-    src/detect/motion_detector.cpp
-    src/blob/blob_merger.cpp
-    src/tracker/tracker_manager.cpp
-    src/overlay/overlay_renderer.cpp
-    src/util/rect_utils.cpp
-    src/util/offset_calculator.cpp
-    src/ui/ui_thread.cpp
-    src/detect/bbox_filter.cpp
+add_executable(Five_Threads
+        src/main.cpp
+        src/rtsp_worker.cpp
+        src/frame_store.cpp
+        src/detector.cpp
+        src/tracker_manager.cpp
+        src/overlay.cpp
+        src/offset_calculator.cpp
+        src/display_loop.cpp
+        src/static_box_manager.cpp
+        src/config.cpp
+        include/other_handlers.h
 )
 
-target_compile_options(opi5_tracker PRIVATE ${GST_CFLAGS_OTHER})
-target_link_libraries(opi5_tracker
-    ${GST_LIBRARIES}
-    ${OpenCV_LIBS}
+target_link_libraries(Five_Threads
+        ${GST_LIBRARIES}
+        ${OpenCV_LIBS}
+        pthread
 )

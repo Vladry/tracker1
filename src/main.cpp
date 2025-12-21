@@ -1,89 +1,292 @@
 #include <gst/gst.h>
 #include <opencv2/opencv.hpp>
-
-#include <atomic>
+#include "config.h"
 #include <chrono>
 #include <iostream>
-#include <csignal>
+#include <vector>
+#include <algorithm>
+#include <cmath>
 
-#include "core/frame_store.h"
-#include "rtsp/rtsp_worker.h"
-#include "detect/motion_detector.h"
-#include "detect/bbox_filter.h"
-#include "tracker/tracker_manager.h"
-#include "overlay/overlay_renderer.h"
-#include "ui/ui_thread.h"
+#include "frame_store.h"
+#include "rtsp_worker.h"
+#include "detector.h"
+#include "tracker_manager.h"
+#include "static_box_manager.h"
+#include "overlay.h"
+#include <atomic>
+#include <thread>
+#include "display_loop.h"
+#include "other_handlers.h"
 
-// ===================== USER TUNABLE =====================
+// ===================== GLOBAL TUNABLE CONSTANTS =====================
+//
+// Dynamic box  = временный bbox от детектора / трекера
+// Static  box  = пользовательский bbox, созданный кликом мыши
+// ===================================================================
 
-// --- Tracker ---
-static constexpr int   MAX_TARGETS = 10;
-static constexpr int   TRACKER_UPDATE_EVERY = 1;
+#define SHOW_IDS = false;
 
-// --- Visual tracking performance ---
-static constexpr bool   USE_CSRT = true;
-static constexpr double OCCLUSION_TIMEOUT_SEC = 1.0;
-static constexpr bool   ALLOW_RESYNC = true;
-static constexpr int    RESYNC_EVERY_N_FRAMES = 5;
+//------------------------------------------------------------------------------
+// Максимально допустимая кратность площади результирующего merged-бокса
+// относительно площади САМОГО КРУПНОГО динамического бокса в кластере.
+// Значение 3.0 означает, что merged-бокс не может превышать
+// площадь largest_bbox * 3.
+// Используется для ограничения разрастания merged-целей.
 
-// --- Detection ---
-static constexpr float DET_MATCH_IOU   = 0.20f;
-static constexpr float SPAWN_BLOCK_IOU = 0.25f;
+// =====================================================================
+// Глобальные флаги управления приложением
+//
+// ВАЖНО:
+//  - выставляются из UI-потока (там где cv::imshow + cv::pollKey)
+//  - обрабатываются в control-потоке (watchdog / restart RTSP)
+// =====================================================================
+std::atomic<bool> g_running{true};
+std::atomic<bool> g_rtsp_restart_requested{false};
 
-// --- BBox filter + hysteresis ---
-static constexpr int    BBOX_MIN_AREA_PX   = 800;
-static constexpr int    BBOX_MAX_AREA_PX   = 120000;
-static constexpr double BBOX_MAX_AREA_FRAC = 0.25;
+// Момент времени (в миллисекундах steady_clock) когда мы последний раз
+// получили кадр от RTSP. Используется watchdog'ом.
+static std::atomic<long long> g_last_frame_ms{0};
 
-static constexpr int    BBOX_MIN_W = 12;
-static constexpr int    BBOX_MIN_H = 12;
-static constexpr double BBOX_MIN_AR = 0.15;
-static constexpr double BBOX_MAX_AR = 6.0;
+// Текущее время по steady_clock в миллисекундах (монотонное, без скачков времени).
+static inline long long now_steady_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
-static constexpr double BBOX_MATCH_IOU = 0.30;
-static constexpr double BBOX_MAX_AREA_JUMP_RATIO = 2.5;
-static constexpr int    BBOX_HOLD_MISSED_FRAMES = 3;
+static constexpr float MERGE_MAX_AREA_MULTIPLIER = 3.0f;
 
-// --- UI ---
-static constexpr int UI_TARGET_FPS = 30;
+// Константа сглаживания мелькания размеров dynamic bbox-ов: (в overlay.cpp или main.cpp)
+static constexpr int DYN_SMOOTH_WINDOW = 15;
+//------------------------------------------------------------------------------
+// Maximum number of simultaneously tracked DYNAMIC boxes.
+// Limits tracker memory usage and prevents CPU spikes on noisy scenes.
+static constexpr int MAX_TARGETS = 50;
 
-// --- Debug ---
-static constexpr bool DEBUG_LOGS = true;
-static constexpr int  LOG_EVERY_N_FRAMES = 120;
 
-// --- RTSP ---
+//------------------------------------------------------------------------------
+// Pixel difference threshold for motion detection.
+// Lower values increase sensitivity; higher values suppress noise.
+static constexpr int DET_DIFF_THRESHOLD = 20;
+
+
+//------------------------------------------------------------------------------
+// Minimum area (in pixels) for a motion region to become a DYNAMIC box.
+static constexpr int DET_MIN_AREA = 10;
+
+
+//------------------------------------------------------------------------------
+// Morphological kernel size for cleaning the motion mask.
+static constexpr int DET_MORPH = 3;
+
+
+//------------------------------------------------------------------------------
+// Downscale factor applied before motion detection.
+// 1.0 = full resolution, < 1.0 = faster but less precise.
+static constexpr double DET_DOWNSCALE = 1.0;
+
+
+//------------------------------------------------------------------------------
+// IoU threshold for matching DYNAMIC boxes between frames.
+static constexpr float TRACK_IOU_TH = 0.25f;
+
+
+//------------------------------------------------------------------------------
+// How many consecutive frames a DYNAMIC box may be missing
+// before its track is dropped.
+static constexpr int TRACK_MAX_MISSED_FRAMES = 3;
+
+
+//------------------------------------------------------------------------------
+// Maximum number of DYNAMIC boxes merged into one cluster.
+static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 2;
+
+
+//------------------------------------------------------------------------------
+// Minimal IoU at which two DYNAMIC boxes are considered neighbors.
+static constexpr float MERGE_NEIGHBOR_IOU_TH = 0.05f;
+
+
+//------------------------------------------------------------------------------
+// Center-distance factor for merging DYNAMIC boxes with weak overlap.
+static constexpr float MERGE_CENTER_DIST_FACTOR = 5.5f;
+
+
+//------------------------------------------------------------------------------
+// Global transparency for HUD / overlay elements.
+static constexpr float HUD_ALPHA = 0.25f;
+
+
+//------------------------------------------------------------------------------
+// Transparency applied to NON-selected objects when a STATIC box exists.
+static constexpr float UNSELECTED_ALPHA_WHEN_SELECTED = 0.3f;
+
+
+// ===================== STATIC BOX SETTINGS =====================
+
+
+//------------------------------------------------------------------------------
+// Enable automatic rebinding of STATIC box after target loss.
+static constexpr bool STATIC_AUTO_REBIND_ON_LOSS = true;
+
+
+//------------------------------------------------------------------------------
+// Time (ms) to wait before forced rebinding to a new DYNAMIC box.
+static constexpr int STATIC_REBIND_TIMEOUT_MS = 1200;
+
+
+//------------------------------------------------------------------------------
+// Minimal IoU required to keep STATIC box attached to the same parent.
+static constexpr float STATIC_PARENT_IOU_TH = 0.15f;
+
+
+//------------------------------------------------------------------------------
+// Minimal score required to reattach STATIC box before forced rebind.
+static constexpr float STATIC_REATTACH_SCORE_TH = 0.20f;
+
+
+// ===================== RTSP SETTINGS =====================
+
 static const char* RTSP_URL = "rtsp://192.168.144.25:8554/main.264";
-static constexpr int     RTSP_PROTOCOLS = 1; // UDP
-static constexpr int     RTSP_LATENCY_MS = 0;
+static constexpr int RTSP_PROTOCOLS = 1;   // UDP
+static constexpr int RTSP_LATENCY_MS = 0;
 static constexpr guint64 RTSP_TIMEOUT_US = 2000000;
 static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
 
-// =======================================================
 
-static std::atomic<int>  g_selected_id{-1};
-static std::atomic<bool> g_running{true};
-static FrameStore* g_store_ptr = nullptr;
+// ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
-static void onSigInt(int) {
-    g_running.store(false, std::memory_order_release);
-    if (g_store_ptr)
-        g_store_ptr->stop();
+static static_box_manager* g_static_mgr = nullptr;
+static std::vector<cv::Rect2f>* g_dynamic_boxes = nullptr;
+static std::vector<int>* g_dynamic_ids = nullptr;
+
+
+// ===================== MOUSE CALLBACK =====================
+
+ void on_mouse(int event, int x, int y, int, void*) {
+    if (event != cv::EVENT_LBUTTONDOWN)
+        return;
+
+    if (!g_static_mgr || !g_dynamic_boxes || !g_dynamic_ids)
+        return;
+
+    g_static_mgr->on_mouse_click(
+            x,
+            y,
+            *g_dynamic_boxes,
+            *g_dynamic_ids
+    );
 }
 
+
+// ===================== GEOMETRY HELPERS =====================
+
+static inline float iou_rect(const cv::Rect2f& a, const cv::Rect2f& b) {
+    float inter = (a & b).area();
+    float uni = a.area() + b.area() - inter;
+    return (uni > 0.f) ? (inter / uni) : 0.f;
+}
+
+static inline float center_dist(const cv::Rect2f& a, const cv::Rect2f& b) {
+    float ax = a.x + a.width * 0.5f;
+    float ay = a.y + a.height * 0.5f;
+    float bx = b.x + b.width * 0.5f;
+    float by = b.y + b.height * 0.5f;
+    float dx = ax - bx;
+    float dy = ay - by;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+static inline float ref_size(const cv::Rect2f& r) {
+    return std::max(10.0f, 0.5f * (r.width + r.height));
+}
+
+
+// ===================== MERGE DYNAMIC BOXES =====================
+
+static std::vector<cv::Rect2f>
+merge_detections(const std::vector<cv::Rect2f>& dets) {
+    std::vector<cv::Rect2f> out;
+    if (dets.empty())
+        return out;
+
+    std::vector<int> idx(dets.size());
+    for (size_t i = 0; i < dets.size(); ++i)
+        idx[i] = (int)i;
+
+    std::sort(idx.begin(), idx.end(),
+              [&](int a, int b) {
+                  return dets[a].area() > dets[b].area();
+              });
+
+    std::vector<char> used(dets.size(), 0);
+
+    for (int seed : idx) {
+        if (used[seed])
+            continue;
+
+        cv::Rect2f merged = dets[seed];
+        used[seed] = 1;
+
+        bool grew = true;
+        int merged_count = 1;
+
+        while (grew && merged_count < MERGE_MAX_BOXES_IN_CLUSTER) {
+            grew = false;
+            int best_j = -1;
+            float best_score = 0.f;
+
+            for (size_t j = 0; j < dets.size(); ++j) {
+                if (used[j])
+                    continue;
+
+                float v_iou = iou_rect(merged, dets[j]);
+                float d = center_dist(merged, dets[j]);
+                float s = ref_size(merged);
+
+                bool neighbor =
+                        (v_iou >= MERGE_NEIGHBOR_IOU_TH) ||
+                        (d <= MERGE_CENTER_DIST_FACTOR * s);
+
+                if (!neighbor)
+                    continue;
+
+                float score = v_iou + 0.001f / (1.0f + d);
+                if (score > best_score) {
+                    best_score = score;
+                    best_j = (int)j;
+                }
+            }
+
+            if (best_j >= 0) {
+                used[best_j] = 1;
+                merged |= dets[best_j];
+                merged_count++;
+                grew = true;
+            }
+        }
+
+        out.push_back(merged);
+    }
+
+    return out;
+}
+
+
+// ===================== MAIN =====================
+
 int main(int argc, char* argv[]) {
+    AppConfig cfg;
+    load_config("config.toml", cfg);
 
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 
     gst_init(&argc, &argv);
+    std::cout << "STARTING PIPELINE..." << std::endl;
 
-    FrameStore store;
-    g_store_ptr = &store;
+    FrameStore raw_store;
+    FrameStore ui_store;
 
-    std::signal(SIGINT,  onSigInt);
-    std::signal(SIGTERM, onSigInt);
-
-    // ---------------- RTSP ----------------
     RtspWorker::Config rcfg;
     rcfg.url = RTSP_URL;
     rcfg.protocols = RTSP_PROTOCOLS;
@@ -91,109 +294,143 @@ int main(int argc, char* argv[]) {
     rcfg.timeout_us = RTSP_TIMEOUT_US;
     rcfg.tcp_timeout_us = RTSP_TCP_TIMEOUT_US;
 
-    RtspWorker rtsp(store, rcfg);
+    RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();
 
-    // ---------------- Detector ----------------
-    MotionDetector detector(MotionDetector::Config{
-            25,   // diff threshold
-            250,  // min area
-            3,    // morph
-            1.0   // downscale
-    });
+    // =====================================================================
+    // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
+    // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
+    // =====================================================================
+    static constexpr int WD_NO_FRAME_TIMEOUT_MS = 1500;   // нет кадров -> считаем зависанием
+    static constexpr int WD_RESTART_COOLDOWN_MS = 1000;   // минимум между рестартами
+    static constexpr int WD_STARTUP_GRACE_MS = 1500;      // льгота после старта (не дёргать сразу)
 
-    // ---------------- BBox filter ----------------
-    detect::BBoxFilter::Config fcfg;
-    fcfg.min_area_px = BBOX_MIN_AREA_PX;
-    fcfg.max_area_px = BBOX_MAX_AREA_PX;
-    fcfg.max_area_frac = BBOX_MAX_AREA_FRAC;
-    fcfg.min_w = BBOX_MIN_W;
-    fcfg.min_h = BBOX_MIN_H;
-    fcfg.min_ar = BBOX_MIN_AR;
-    fcfg.max_ar = BBOX_MAX_AR;
-    fcfg.match_iou = BBOX_MATCH_IOU;
-    fcfg.max_area_jump_ratio = BBOX_MAX_AREA_JUMP_RATIO;
-    fcfg.hold_missed_frames = BBOX_HOLD_MISSED_FRAMES;
+    const long long app_start_ms = now_steady_ms();
+    g_last_frame_ms.store(app_start_ms, std::memory_order_relaxed);
 
-    detect::BBoxFilter bbox_filter(fcfg);
+    std::atomic<long long> last_restart_ms{app_start_ms - 100000};
 
-    // ---------------- Tracker ----------------
-    TrackerManager::Config tcfg;
-    tcfg.max_targets = MAX_TARGETS;
-    tcfg.use_csrt = USE_CSRT;
-    tcfg.occlusion_timeout_sec = OCCLUSION_TIMEOUT_SEC;
-    tcfg.allow_resync = ALLOW_RESYNC;
-    tcfg.resync_every_n_frames = RESYNC_EVERY_N_FRAMES;
-    tcfg.det_match_iou = DET_MATCH_IOU;
-    tcfg.spawn_block_iou = SPAWN_BLOCK_IOU;
-    tcfg.debug_logs = DEBUG_LOGS;
-    tcfg.debug_every_n_frames = LOG_EVERY_N_FRAMES;
-    tcfg.tracker_update_every = TRACKER_UPDATE_EVERY;
+    std::thread control_thread([&]() {
+        std::cout << "[CTRL] Control thread started" << std::endl;
+        while (g_running.load(std::memory_order_relaxed)) {
 
-    TrackerManager tracker(tcfg);
-
-    // ---------------- Overlay ----------------
-    OverlayRenderer overlay(OverlayRenderer::Config{
-            0.35f,  // alpha
-            true    // hide others when selected
-    });
-
-    // ---------------- UI thread ----------------
-    ui::UiThread uiThread("OPI5", UI_TARGET_FPS);
-    uiThread.start();
-
-    int last_click_seq = uiThread.clickState().seq.load(std::memory_order_acquire);
-
-    // ===================== PROCESS LOOP =====================
-    // wait/notify, без polling, без waitKey
-    // ========================================================
-
-    while (g_running.load(std::memory_order_acquire)) {
-        cv::Mat frame;
-
-        if (!store.waitFrame(frame, 2000))
-            continue;
-
-        // 1) detect raw
-        auto dets = detector.detect(frame);
-
-        // 2) filter + stabilize (no merge)
-        auto stable = bbox_filter.process(dets, frame.size());
-
-        // 3) update tracker using stabilized dets
-        tracker.update(frame, stable);
-
-        // 4) mouse click handling (thread-safe): UI thread only stores x/y/seq,
-        //    processing thread calls tracker->pickTargetId
-        const int cur_seq = uiThread.clickState().seq.load(std::memory_order_acquire);
-        if (cur_seq != last_click_seq) {
-            last_click_seq = cur_seq;
-            const int cx = uiThread.clickState().x.load(std::memory_order_acquire);
-            const int cy = uiThread.clickState().y.load(std::memory_order_acquire);
-
-            int id = tracker.pickTargetId(cx, cy);
-            if (id > 0) {
-                g_selected_id.store(id, std::memory_order_release);
-                std::cout << "[mouse] selected id=" << id << std::endl;
+            // Ручной рестарт по R / r
+            if (g_rtsp_restart_requested.exchange(false, std::memory_order_acq_rel)) {
+                std::cout << "[CTRL] Manual RTSP restart" << std::endl;
+                rtsp.stop();
+                rtsp.start();
+                last_restart_ms.store(now_steady_ms(), std::memory_order_relaxed);
+                g_last_frame_ms.store(now_steady_ms(), std::memory_order_relaxed);
             }
+
+            // Watchdog: если давно нет кадров — перезапускаем RTSP
+            const long long now_ms = now_steady_ms();
+            const long long since_start = now_ms - app_start_ms;
+            const long long no_frame_ms = now_ms - g_last_frame_ms.load(std::memory_order_relaxed);
+            const long long since_restart = now_ms - last_restart_ms.load(std::memory_order_relaxed);
+
+            if (since_start > WD_STARTUP_GRACE_MS &&
+                no_frame_ms > WD_NO_FRAME_TIMEOUT_MS &&
+                since_restart > WD_RESTART_COOLDOWN_MS) {
+
+                std::cout << "[WATCHDOG] No frames for " << no_frame_ms
+                          << " ms -> restarting RTSP" << std::endl;
+
+                rtsp.stop();
+                rtsp.start();
+                last_restart_ms.store(now_ms, std::memory_order_relaxed);
+                g_last_frame_ms.store(now_ms, std::memory_order_relaxed);
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
+        std::cout << "[CTRL] Control thread exit" << std::endl;
+    });
 
-        // 5) selected target validity
-        int sel = g_selected_id.load(std::memory_order_acquire);
-        if (sel > 0 && !tracker.hasTargetId(sel)) {
-            g_selected_id.store(-1, std::memory_order_release);
-            sel = -1;
+
+
+    MotionDetector detector({
+                                    DET_DIFF_THRESHOLD,
+                                    DET_MIN_AREA,
+                                    DET_MORPH,
+                                    DET_DOWNSCALE
+                            });
+
+    TrackerManager tracker({
+                                   TRACK_IOU_TH,
+                                   TRACK_MAX_MISSED_FRAMES,
+                                   MAX_TARGETS
+                           });
+
+    OverlayRenderer overlay({
+                                    HUD_ALPHA,
+                                    UNSELECTED_ALPHA_WHEN_SELECTED
+                            });
+
+    static_box_manager static_mgr({
+                                          STATIC_AUTO_REBIND_ON_LOSS,
+                                          STATIC_REBIND_TIMEOUT_MS,
+                                          STATIC_PARENT_IOU_TH,
+                                          STATIC_REATTACH_SCORE_TH
+                                  });
+    std::vector<cv::Rect2f> dynamic_boxes;
+    std::vector<int> dynamic_ids;
+
+    g_static_mgr = &static_mgr;
+    g_dynamic_boxes = &dynamic_boxes;
+    g_dynamic_ids = &dynamic_ids;
+
+    // ---------------- TRACKER WORKER (из старого while, без UI) ----------------
+    std::thread tracker_thread([&]() {
+        cv::Mat frame;
+        while (g_running.load(std::memory_order_relaxed)) {
+
+            if (!raw_store.waitFrame(frame, 100)) {
+                continue;
+            }
+
+            // Кадр получен: обновляем таймер watchdog-а.
+            g_last_frame_ms.store(now_steady_ms(), std::memory_order_relaxed);
+
+            auto dets = detector.detect(frame);
+            auto merged = merge_detections(dets);
+
+            tracker.update(merged);
+
+            dynamic_boxes.clear();
+            dynamic_ids.clear();
+            for (const auto& t : tracker.targets()) {
+                dynamic_boxes.emplace_back(cv::Rect2f(t.bbox));
+                dynamic_ids.push_back(t.id);
+            }
+
+            static_mgr.update(dynamic_boxes, dynamic_ids);
+
+            overlay.render(frame, tracker.targets(), -1);
+            overlay.render_static_boxes(frame, static_mgr.boxes());
+
+            // Публикуем кадр с overlay для UI (отдельный store => нет "саморазгона")
+            ui_store.setFrame(std::move(frame));
         }
+        std::cout << "[TRK] tracker thread exit" << std::endl;
+    });
 
-        // 6) render overlay into frame
-        overlay.render(frame, tracker.targets(), sel);
+    DisplayLoop display_loop(ui_store);
+    display_loop.run();   // ЕДИНСТВЕННЫЙ UI-LOOP
 
-        // 7) send to UI thread (smooth)
-        uiThread.submitFrame(frame);
-    }
+    if (tracker_thread.joinable()) tracker_thread.join();
 
-    store.stop();
+
+// Запрос на остановку RTSP/потоков уже выставлен через g_running.
+    // Аккуратно завершаем RTSP.
     rtsp.stop();
-    uiThread.stop();
+
+    // Будим возможные ожидания по кадрам.
+    raw_store.stop();
+    ui_store.stop();
+
+    // Дожидаемся control-потока, чтобы он не работал с rtsp после уничтожения.
+    if (control_thread.joinable()) control_thread.join();
+
     return 0;
 }
