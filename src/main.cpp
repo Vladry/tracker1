@@ -288,7 +288,8 @@ int main(int argc, char* argv[]) {
     FrameStore ui_store;
 
     RtspWorker::Config rcfg;
-    rcfg.url = RTSP_URL;
+    rcfg.url = cfg.rtsp.url;
+//    rcfg.url = RTSP_URL;
     rcfg.protocols = RTSP_PROTOCOLS;
     rcfg.latency_ms = RTSP_LATENCY_MS;
     rcfg.timeout_us = RTSP_TIMEOUT_US;
