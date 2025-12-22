@@ -29,10 +29,6 @@ latency_ms = 0
 timeout_us = 2000000
 tcp_timeout_us = 2000000
 
-# Принудительная capset-строка перед appsink.
-# Нужна, чтобы гарантировать формат кадра для OpenCV (NV12).
-caps_force = "video/x-raw,format=NV12"
-
 # Включить подробные логи нашего RTSP-воркера (std::cout / std::cerr).
 verbose = true
 

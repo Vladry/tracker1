@@ -38,10 +38,6 @@ struct AppConfig {
         std::uint64_t timeout_us = 2'000'000;
         std::uint64_t tcp_timeout_us = 2'000'000;
 
-        // Принудительная капса на выход декодера (перед appsink).
-        // Нужна, чтобы гарантировать формат кадра, который ожидает OpenCV (NV12).
-        std::string caps_force = "video/x-raw,format=NV12";
-
         // Более подробные логи (не GST_DEBUG, а именно наши std::cout / std::cerr).
         bool verbose = true;
     } rtsp;

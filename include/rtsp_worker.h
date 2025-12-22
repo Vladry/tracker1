@@ -37,8 +37,8 @@ public:
 
     struct Config {
         // RTSP URL камеры. Пример:
-        // "rtsp://192.168.144.25:8554/main.264"
-        std::string url;
+        // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
+        std::string url = "rtsp://192.168.144.25:8554/main.264";
 
         // rtspsrc::protocols (битовая маска). 1 = UDP, 4 = TCP.
         // Для вашей камеры вы чаще используете UDP: protocols = 1

@@ -145,6 +145,7 @@ static constexpr float STATIC_REATTACH_SCORE_TH = 0.20f;
 
 
 // ===================== RTSP SETTINGS =====================
+/*
 
 static const char* RTSP_URL = "rtsp://192.168.144.25:8554/main.264";
 static constexpr int RTSP_PROTOCOLS = 1;   // UDP
@@ -152,6 +153,7 @@ static constexpr int RTSP_LATENCY_MS = 0;
 static constexpr guint64 RTSP_TIMEOUT_US = 2000000;
 static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
 
+*/
 
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
@@ -289,11 +291,11 @@ int main(int argc, char* argv[]) {
 
     RtspWorker::Config rcfg;
     rcfg.url = cfg.rtsp.url;
-//    rcfg.url = RTSP_URL;
-    rcfg.protocols = RTSP_PROTOCOLS;
-    rcfg.latency_ms = RTSP_LATENCY_MS;
-    rcfg.timeout_us = RTSP_TIMEOUT_US;
-    rcfg.tcp_timeout_us = RTSP_TCP_TIMEOUT_US;
+    rcfg.protocols = cfg.rtsp.protocols;
+    rcfg.latency_ms = cfg.rtsp.latency_ms;
+    rcfg.timeout_us = cfg.rtsp.timeout_us;
+    rcfg.tcp_timeout_us = cfg.rtsp.tcp_timeout_us;
+    rcfg.verbose = cfg.rtsp.verbose;
 
     RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();

@@ -32,9 +32,6 @@ bool load_config(const std::string& path, AppConfig& cfg) {
         if (auto v = tbl["rtsp"]["tcp_timeout_us"].value<std::uint64_t>())
             cfg.rtsp.tcp_timeout_us = *v;
 
-        if (auto v = tbl["rtsp"]["caps_force"].value<std::string>())
-            cfg.rtsp.caps_force = *v;
-
         if (auto v = tbl["rtsp"]["verbose"].value<bool>())
             cfg.rtsp.verbose = *v;
 
