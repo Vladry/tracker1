@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="op (65208f0c-4f6a-44f2-9d28-91c6c8dfb2dd)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/tmp/Five_Threads" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>

@@ -301,9 +301,13 @@ int main(int argc, char* argv[]) {
     // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
     // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
     // =====================================================================
-    static constexpr int WD_NO_FRAME_TIMEOUT_MS = 1500;   // нет кадров -> считаем зависанием
-    static constexpr int WD_RESTART_COOLDOWN_MS = 1000;   // минимум между рестартами
-    static constexpr int WD_STARTUP_GRACE_MS = 1500;      // льгота после старта (не дёргать сразу)
+// нет кадров -> считаем зависанием
+// минимум между рестартами
+// льгота после старта (не дёргать сразу)*/
+
+    static const int WD_NO_FRAME_TIMEOUT_MS = cfg.rtsp_watchdog.no_frame_timeout_ms ? cfg.rtsp_watchdog.no_frame_timeout_ms: 1500;
+    static const int WD_RESTART_COOLDOWN_MS = cfg.rtsp_watchdog.restart_cooldown_ms ? cfg.rtsp_watchdog.restart_cooldown_ms: 1000;
+    static const int WD_STARTUP_GRACE_MS = cfg.rtsp_watchdog.startup_grace_ms ? cfg.rtsp_watchdog.startup_grace_ms: 1500;
 
     const long long app_start_ms = now_steady_ms();
     g_last_frame_ms.store(app_start_ms, std::memory_order_relaxed);
