@@ -50,7 +50,7 @@ static std::atomic<long long> g_last_frame_ms{0};
 // Текущее время по steady_clock в миллисекундах (монотонное, без скачков времени).
 static inline long long now_steady_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
+            std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 static constexpr float MERGE_MAX_AREA_MULTIPLIER = 3.0f;
@@ -61,28 +61,6 @@ static constexpr int DYN_SMOOTH_WINDOW = 15;
 // Maximum number of simultaneously tracked DYNAMIC boxes.
 // Limits tracker memory usage and prevents CPU spikes on noisy scenes.
 static constexpr int MAX_TARGETS = 50;
-
-
-//------------------------------------------------------------------------------
-// Pixel difference threshold for motion detection.
-// Lower values increase sensitivity; higher values suppress noise.
-static constexpr int DET_DIFF_THRESHOLD = 20;
-
-
-//------------------------------------------------------------------------------
-// Minimum area (in pixels) for a motion region to become a DYNAMIC box.
-static constexpr int DET_MIN_AREA = 10;
-
-
-//------------------------------------------------------------------------------
-// Morphological kernel size for cleaning the motion mask.
-static constexpr int DET_MORPH = 3;
-
-
-//------------------------------------------------------------------------------
-// Downscale factor applied before motion detection.
-// 1.0 = full resolution, < 1.0 = faster but less precise.
-static constexpr double DET_DOWNSCALE = 1.0;
 
 
 //------------------------------------------------------------------------------
@@ -144,27 +122,17 @@ static constexpr float STATIC_PARENT_IOU_TH = 0.15f;
 static constexpr float STATIC_REATTACH_SCORE_TH = 0.20f;
 
 
-// ===================== RTSP SETTINGS =====================
-/*
-
-static const char* RTSP_URL = "rtsp://192.168.144.25:8554/main.264";
-static constexpr int RTSP_PROTOCOLS = 1;   // UDP
-static constexpr int RTSP_LATENCY_MS = 0;
-static constexpr guint64 RTSP_TIMEOUT_US = 2000000;
-static constexpr guint64 RTSP_TCP_TIMEOUT_US = 2000000;
-
-*/
 
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
-static static_box_manager* g_static_mgr = nullptr;
-static std::vector<cv::Rect2f>* g_dynamic_boxes = nullptr;
-static std::vector<int>* g_dynamic_ids = nullptr;
+static static_box_manager *g_static_mgr = nullptr;
+static std::vector <cv::Rect2f> *g_dynamic_boxes = nullptr;
+static std::vector<int> *g_dynamic_ids = nullptr;
 
 
 // ===================== MOUSE CALLBACK =====================
 
- void on_mouse(int event, int x, int y, int, void*) {
+void on_mouse(int event, int x, int y, int, void *) {
     if (event != cv::EVENT_LBUTTONDOWN)
         return;
 
@@ -182,13 +150,13 @@ static std::vector<int>* g_dynamic_ids = nullptr;
 
 // ===================== GEOMETRY HELPERS =====================
 
-static inline float iou_rect(const cv::Rect2f& a, const cv::Rect2f& b) {
+static inline float iou_rect(const cv::Rect2f &a, const cv::Rect2f &b) {
     float inter = (a & b).area();
     float uni = a.area() + b.area() - inter;
     return (uni > 0.f) ? (inter / uni) : 0.f;
 }
 
-static inline float center_dist(const cv::Rect2f& a, const cv::Rect2f& b) {
+static inline float center_dist(const cv::Rect2f &a, const cv::Rect2f &b) {
     float ax = a.x + a.width * 0.5f;
     float ay = a.y + a.height * 0.5f;
     float bx = b.x + b.width * 0.5f;
@@ -198,22 +166,22 @@ static inline float center_dist(const cv::Rect2f& a, const cv::Rect2f& b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
-static inline float ref_size(const cv::Rect2f& r) {
+static inline float ref_size(const cv::Rect2f &r) {
     return std::max(10.0f, 0.5f * (r.width + r.height));
 }
 
 
 // ===================== MERGE DYNAMIC BOXES =====================
 
-static std::vector<cv::Rect2f>
-merge_detections(const std::vector<cv::Rect2f>& dets) {
-    std::vector<cv::Rect2f> out;
+static std::vector <cv::Rect2f>
+merge_detections(const std::vector <cv::Rect2f> &dets) {
+    std::vector <cv::Rect2f> out;
     if (dets.empty())
         return out;
 
     std::vector<int> idx(dets.size());
     for (size_t i = 0; i < dets.size(); ++i)
-        idx[i] = (int)i;
+        idx[i] = (int) i;
 
     std::sort(idx.begin(), idx.end(),
               [&](int a, int b) {
@@ -222,7 +190,7 @@ merge_detections(const std::vector<cv::Rect2f>& dets) {
 
     std::vector<char> used(dets.size(), 0);
 
-    for (int seed : idx) {
+    for (int seed: idx) {
         if (used[seed])
             continue;
 
@@ -255,7 +223,7 @@ merge_detections(const std::vector<cv::Rect2f>& dets) {
                 float score = v_iou + 0.001f / (1.0f + d);
                 if (score > best_score) {
                     best_score = score;
-                    best_j = (int)j;
+                    best_j = (int) j;
                 }
             }
 
@@ -276,7 +244,7 @@ merge_detections(const std::vector<cv::Rect2f>& dets) {
 
 // ===================== MAIN =====================
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     AppConfig cfg;
     load_config("config.toml", cfg);
 
@@ -304,9 +272,30 @@ int main(int argc, char* argv[]) {
     // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
     // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
     // =====================================================================
-    static constexpr int WD_NO_FRAME_TIMEOUT_MS = 1500;   // нет кадров -> считаем зависанием
-    static constexpr int WD_RESTART_COOLDOWN_MS = 1000;   // минимум между рестартами
-    static constexpr int WD_STARTUP_GRACE_MS = 1500;      // льгота после старта (не дёргать сразу)
+    static const int WD_NO_FRAME_TIMEOUT_MS = cfg.rtsp_watchdog.no_frame_timeout_ms
+                                              ? cfg.rtsp_watchdog.no_frame_timeout_ms : 1500;
+    static const int WD_RESTART_COOLDOWN_MS = cfg.rtsp_watchdog.restart_cooldown_ms
+                                              ? cfg.rtsp_watchdog.restart_cooldown_ms : 1000;
+    static const int WD_STARTUP_GRACE_MS = cfg.rtsp_watchdog.startup_grace_ms ? cfg.rtsp_watchdog.startup_grace_ms
+                                                                              : 1500;
+    //------------------------------------------------------------------------------
+    // Pixel difference threshold for motion detection.
+    // Lower values increase sensitivity; higher values suppress noise.
+    static const int DET_DIFF_THRESHOLD = cfg.detector.diff_threshold ? cfg.detector.diff_threshold : 20;
+    //------------------------------------------------------------------------------
+// Minimum area (in pixels) for a motion region to become a DYNAMIC box.
+    static const int DET_MIN_AREA = cfg.detector.min_area ? cfg.detector.min_area : 10;
+//------------------------------------------------------------------------------
+// Morphological kernel size for cleaning the motion mask.
+    static const int DET_MORPH = cfg.detector.morph_kernel ? cfg.detector.morph_kernel : 3;
+//------------------------------------------------------------------------------
+// Downscale factor applied before motion detection.
+// 1.0 = full resolution, < 1.0 = faster but less precise.
+    static const double DET_DOWNSCALE = cfg.detector.downscale ? cfg.detector.downscale : 1.0;
+
+
+
+
 
     const long long app_start_ms = now_steady_ms();
     g_last_frame_ms.store(app_start_ms, std::memory_order_relaxed);
@@ -351,7 +340,6 @@ int main(int argc, char* argv[]) {
     });
 
 
-
     MotionDetector detector({
                                     DET_DIFF_THRESHOLD,
                                     DET_MIN_AREA,
@@ -376,7 +364,7 @@ int main(int argc, char* argv[]) {
                                           STATIC_PARENT_IOU_TH,
                                           STATIC_REATTACH_SCORE_TH
                                   });
-    std::vector<cv::Rect2f> dynamic_boxes;
+    std::vector <cv::Rect2f> dynamic_boxes;
     std::vector<int> dynamic_ids;
 
     g_static_mgr = &static_mgr;
@@ -402,7 +390,7 @@ int main(int argc, char* argv[]) {
 
             dynamic_boxes.clear();
             dynamic_ids.clear();
-            for (const auto& t : tracker.targets()) {
+            for (const auto &t: tracker.targets()) {
                 dynamic_boxes.emplace_back(cv::Rect2f(t.bbox));
                 dynamic_ids.push_back(t.id);
             }
