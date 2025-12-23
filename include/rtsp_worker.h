@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "frame_store.h"
+#include "config.h" //для импорта RtspConfig
 
 /*
  * RtspWorker
@@ -35,7 +36,7 @@ public:
         ERROR          // ошибка/зависание (рабочий поток завершился с ошибкой)
     };
 
-    struct Config {
+/*    struct Config {
         // RTSP URL камеры. Пример:
         // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
         std::string url = "rtsp://192.168.144.25:8554/main.264";
@@ -69,10 +70,10 @@ public:
 
         // Подробные логи в stderr.
         bool verbose = true;
-    };
+    };*/
 
 public:
-    RtspWorker(FrameStore& store, const Config& cfg);
+    RtspWorker(FrameStore& store, const RtspConfig& cfg);
     ~RtspWorker();
 
     // Запуск RTSP-потока (если уже запущен — ничего не делает).
@@ -111,7 +112,7 @@ private:
 
 private:
     FrameStore& store_;
-    Config cfg_;
+    RtspConfig cfg_;
 
     std::atomic<State> state_{State::STOPPED};
     std::atomic<bool> running_{false};         // "рабочий поток должен работать"

@@ -6,50 +6,56 @@
 // ============================================================================
 // RTSP / GStreamer configuration
 // ============================================================================
-
-struct RtspConfig {
-
-    // ----------------------------- [rtsp] -----------------------------
-    struct Rtsp {
-        // URL видеопотока (пример: "rtsp://192.168.1.10:8554/main.264")
-        std::string url = "";
+    struct RtspConfig {
+        // RTSP URL камеры. Пример:
+        // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
+        std::string url = "rtsp://192.168.144.25:8554/main.264";
 
         // Протоколы rtspsrc:
-        // 1 = UDP, 4 = TCP
+        //(битовая маска) 1 = UDP, 4 = TCP
         int protocols = 1;
 
-        // latency rtspsrc (мс)
+        // rtspsrc::latency (мс). 0 = минимальная задержка (но больше риск нестабильности)
         int latency_ms = 0;
 
-        // Таймауты rtspsrc (мкс)
-        std::uint64_t timeout_us = 2'000'000;
-        std::uint64_t tcp_timeout_us = 2'000'000;
+        // rtspsrc::timeout / tcp-timeout (микросекунды).
+        // Обычно достаточно 2с, чтобы не висеть бесконечно при старте.
+        uint64_t timeout_us = 2'000'000;
+        uint64_t tcp_timeout_us = 2'000'000;
 
-        // Подробные пользовательские логи
+        // Таймаут ожидания перехода пайплайна в PLAYING на старте (мс).
+        // Если камера/сеть "тупит", лучше явно выйти с ошибкой, чем зависнуть.
+        int start_timeout_ms = 3000;
+
+        // Таймаут ожидания перехода в NULL на остановке (мс).
+        int stop_timeout_ms = 2000;
+
+        // Пауза после stop() перед повторным стартом (мс).
+        // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
+        int restart_delay_ms = 300;
+
+        // Подробные логи в stderr.
         bool verbose = true;
-    } rtsp;
 
+    };
+
+struct RtspWatchDog {
     // ------------------------- [rtsp.watchdog] -------------------------
-    struct RtspWatchdog {
-        // Таймаут отсутствия кадров (мс)
-        std::uint64_t no_frame_timeout_ms = 1500;
+    // Таймаут отсутствия кадров (мс)
+    std::uint64_t no_frame_timeout_ms = 1500;
 
-        // Минимальный интервал между рестартами (мс)
-        std::uint64_t restart_cooldown_ms = 1000;
+    // Минимальный интервал между рестартами (мс)
+    std::uint64_t restart_cooldown_ms = 1000;
 
-        // Льготный период после старта (мс)
-        std::uint64_t startup_grace_ms = 3000;
-    } rtsp_watchdog;
+    // Льготный период после старта (мс)
+    std::uint64_t startup_grace_ms = 3000;
+
 };
 
 // ============================================================================
 // Detector configuration
 // ============================================================================
-
 struct DetectorConfig {
-
-    // --------------------------- [detector] ---------------------------
-    struct Detector {
         // Минимальная разница яркости
         int diff_threshold = 20;
 
@@ -61,17 +67,12 @@ struct DetectorConfig {
 
         // Downscale перед детекцией
         double downscale = 1.0;
-    } detector;
 };
 
 // ============================================================================
 // Merge configuration
 // ============================================================================
-
 struct MergeConfig {
-
-    // ----------------------------- [merge] -----------------------------
-    struct Merge {
         // Максимум bbox в кластере
         int max_boxes_in_cluster = 2;
 
@@ -83,17 +84,12 @@ struct MergeConfig {
 
         // Максимальный рост площади merged bbox
         float max_area_multiplier = 3.0f;
-    } merge;
 };
 
 // ============================================================================
 // Tracker configuration
 // ============================================================================
-
 struct TrackerConfig {
-
-    // ---------------------------- [tracker] ----------------------------
-    struct Tracker {
         // IoU для сопоставления
         float iou_th = 0.25f;
 
@@ -102,7 +98,6 @@ struct TrackerConfig {
 
         // Максимум активных целей
         int max_targets = 50;
-    } tracker;
 };
 
 // ============================================================================
@@ -110,9 +105,6 @@ struct TrackerConfig {
 // ============================================================================
 
 struct StaticRebindConfig {
-
-    // ------------------------- [static_rebind] -------------------------
-    struct StaticRebind {
         // Автоматическая перепривязка static bbox
         bool auto_rebind = true;
 
@@ -136,7 +128,6 @@ struct StaticRebindConfig {
 
         // Порог уверенности перепривязки
         float reattach_score_th = 0.20f;
-    } static_rebind;
 };
 
 // ============================================================================
@@ -144,21 +135,14 @@ struct StaticRebindConfig {
 // ============================================================================
 
 struct OverlayConfig {
-
-    // ---------------------------- [overlay] ----------------------------
-    struct Overlay {
         // Прозрачность HUD
         float hud_alpha = 0.25f;
 
         // Прозрачность невыбранных bbox
         float unselected_alpha_when_selected = 0.3f;
-    } overlay;
-
     // -------------------------- [smoothing] ---------------------------
-    struct Smoothing {
         // Окно сглаживания bbox
         int dynamic_bbox_window = 5;
-    } smoothing;
 };
 
 
@@ -167,6 +151,7 @@ struct OverlayConfig {
 // ============================================================================
 
 bool load_rtsp_config(toml::table& tbl, RtspConfig& cfg);
+bool load_rtsp_watchdog (toml::table &tbl, RtspWatchDog& rtsp_wd);
 bool load_detector_config(const toml::table& tbl, DetectorConfig& cfg);
 bool load_merge_config(const toml::table& tbl, MergeConfig& cfg);
 bool load_tracker_config(const toml::table& tbl, TrackerConfig& cfg);

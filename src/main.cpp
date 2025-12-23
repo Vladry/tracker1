@@ -126,7 +126,7 @@ static constexpr float STATIC_REATTACH_SCORE_TH = 0.20f;
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
 static static_box_manager *g_static_mgr = nullptr;
-static std::vector <cv::Rect2f> *g_dynamic_boxes = nullptr;
+static std::vector<cv::Rect2f> *g_dynamic_boxes = nullptr;
 static std::vector<int> *g_dynamic_ids = nullptr;
 
 
@@ -173,9 +173,9 @@ static inline float ref_size(const cv::Rect2f &r) {
 
 // ===================== MERGE DYNAMIC BOXES =====================
 
-static std::vector <cv::Rect2f>
-merge_detections(const std::vector <cv::Rect2f> &dets) {
-    std::vector <cv::Rect2f> out;
+static std::vector<cv::Rect2f>
+merge_detections(const std::vector<cv::Rect2f> &dets) {
+    std::vector<cv::Rect2f> out;
     if (dets.empty())
         return out;
 
@@ -245,8 +245,6 @@ merge_detections(const std::vector <cv::Rect2f> &dets) {
 // ===================== MAIN =====================
 
 int main(int argc, char *argv[]) {
-    AppConfig cfg;
-    load_config("config.toml", cfg);
 
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
@@ -257,45 +255,46 @@ int main(int argc, char *argv[]) {
     FrameStore raw_store;
     FrameStore ui_store;
 
-    RtspWorker::Config rcfg;
-    load_rtsp_
-    rcfg.url = cfg.rtsp.url;
-    rcfg.protocols = cfg.rtsp.protocols;
-    rcfg.latency_ms = cfg.rtsp.latency_ms;
-    rcfg.timeout_us = cfg.rtsp.timeout_us;
-    rcfg.tcp_timeout_us = cfg.rtsp.tcp_timeout_us;
-    rcfg.verbose = cfg.rtsp.verbose;
+    // создаём объекты конфигураций
+    RtspConfig rcfg;
+    RtspWatchDog rtsp_watchdog;
+    DetectorConfig dcfg;
+
+    // получаем конфигурации из config.toml
+    toml::table tbl = toml::parse_file("config.toml");
+    load_rtsp_config(tbl, rcfg);
+    load_rtsp_watchdog(tbl, rtsp_watchdog);
+    load_detector_config(tbl, dcfg);
 
     RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();
+
+
 
     // =====================================================================
     // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
     // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
     // =====================================================================
-    static const int WD_NO_FRAME_TIMEOUT_MS = cfg.rtsp_watchdog.no_frame_timeout_ms
-                                              ? cfg.rtsp_watchdog.no_frame_timeout_ms : 1500;
-    static const int WD_RESTART_COOLDOWN_MS = cfg.rtsp_watchdog.restart_cooldown_ms
-                                              ? cfg.rtsp_watchdog.restart_cooldown_ms : 1000;
-    static const int WD_STARTUP_GRACE_MS = cfg.rtsp_watchdog.startup_grace_ms ? cfg.rtsp_watchdog.startup_grace_ms
-                                                                              : 1500;
+    static const int WD_NO_FRAME_TIMEOUT_MS = rtsp_watchdog.no_frame_timeout_ms
+                                              ? rtsp_watchdog.no_frame_timeout_ms : 1500;
+    static const int WD_RESTART_COOLDOWN_MS = rtsp_watchdog.restart_cooldown_ms
+                                              ? rtsp_watchdog.restart_cooldown_ms : 1000;
+    static const int WD_STARTUP_GRACE_MS = rtsp_watchdog.startup_grace_ms ? rtsp_watchdog.startup_grace_ms
+                                                                          : 1500;
     //------------------------------------------------------------------------------
     // Pixel difference threshold for motion detection.
     // Lower values increase sensitivity; higher values suppress noise.
-    static const int DET_DIFF_THRESHOLD = cfg.detector.diff_threshold ? cfg.detector.diff_threshold : 20;
+    static const int DET_DIFF_THRESHOLD = dcfg.diff_threshold ? dcfg.diff_threshold : 20;
     //------------------------------------------------------------------------------
 // Minimum area (in pixels) for a motion region to become a DYNAMIC box.
-    static const int DET_MIN_AREA = cfg.detector.min_area ? cfg.detector.min_area : 10;
+    static const int DET_MIN_AREA = dcfg.min_area ? dcfg.min_area : 10;
 //------------------------------------------------------------------------------
 // Morphological kernel size for cleaning the motion mask.
-    static const int DET_MORPH = cfg.detector.morph_kernel ? cfg.detector.morph_kernel : 3;
+    static const int DET_MORPH = dcfg.morph_kernel ? dcfg.morph_kernel : 3;
 //------------------------------------------------------------------------------
 // Downscale factor applied before motion detection.
 // 1.0 = full resolution, < 1.0 = faster but less precise.
-    static const double DET_DOWNSCALE = cfg.detector.downscale ? cfg.detector.downscale : 1.0;
-
-
-
+    static const double DET_DOWNSCALE = dcfg.downscale ? dcfg.downscale : 1.0;
 
 
     const long long app_start_ms = now_steady_ms();
@@ -343,7 +342,7 @@ int main(int argc, char *argv[]) {
 
     MotionDetector detector({       // Pixel difference threshold for motion detection.
                                     // Lower values increase sensitivity; higher values suppress noise.
-                                    cfg.detector.diff_threshold ? cfg.detector.diff_threshold : 20,
+                                    dcfg.diff_threshold ? dcfg.diff_threshold : 20,
                                     DET_MIN_AREA,
                                     DET_MORPH,
                                     DET_DOWNSCALE
@@ -366,7 +365,7 @@ int main(int argc, char *argv[]) {
                                           STATIC_PARENT_IOU_TH,
                                           STATIC_REATTACH_SCORE_TH
                                   });
-    std::vector <cv::Rect2f> dynamic_boxes;
+    std::vector<cv::Rect2f> dynamic_boxes;
     std::vector<int> dynamic_ids;
 
     g_static_mgr = &static_mgr;

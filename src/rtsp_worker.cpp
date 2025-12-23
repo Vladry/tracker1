@@ -1,4 +1,5 @@
 #include "rtsp_worker.h"
+#include "config.h"
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
@@ -9,7 +10,7 @@
 
 using namespace std::chrono;
 
-RtspWorker::RtspWorker(FrameStore& store, const Config& cfg)
+RtspWorker::RtspWorker(FrameStore& store, const RtspConfig& cfg)
     : store_(store), cfg_(cfg) {}
 
 RtspWorker::~RtspWorker() {
