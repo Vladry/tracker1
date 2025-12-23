@@ -1,163 +1,193 @@
-#pragma once
+#include <toml++/toml.h>   // ДОЛЖНО БЫТЬ ПЕРВЫМ
+#include "config.h"
+#include <iostream>
+#include <stdexcept>
+#include <string_view>
 
-#include <string>
-#include <cstdint>
-#include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
+template <typename T>
+static T read_required(const toml::table &tbl, std::string_view key) {
+    const auto *node = tbl.get(key);
+    if (!node) {
+        throw std::runtime_error("missing key");
+    }
+    const auto value = node->value<T>();
+    if (!value) {
+        throw std::runtime_error("invalid value");
+    }
+    return *value;
+}
+
 // ============================================================================
-// RTSP / GStreamer configuration
+// Реализация загрузки config.toml
+//
+// Важно:
+//  - Любая ошибка парсинга не должна "убивать" приложение.
+//  - В случае ошибки оставляем дефолты из AppConfig и возвращаем false.
+//  - Все имена ключей должны соответствовать config.toml.
 // ============================================================================
-struct RtspConfig {
-    // RTSP URL камеры. Пример:
-    // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
-    std::string url = "rtsp://192.168.144.25:8554/main.264";
+bool load_rtsp_config(toml::table &tbl, RtspConfig &rcfg) {
+    // ----------------------------- [rtsp] -----------------------------
+    try {
+        const auto *rtsp_node = tbl.get("rtsp");
+        if (!rtsp_node) {
+            throw std::runtime_error("missing [rtsp] table");
+        }
+        const auto *rtsp = rtsp_node->as_table();
+        if (!rtsp) {
+            throw std::runtime_error("invalid [rtsp] table");
+        }
+        rcfg.url = read_required<std::string>(*rtsp, "url");
+        rcfg.protocols = read_required<int>(*rtsp, "protocols");
+        rcfg.latency_ms = read_required<int>(*rtsp, "latency_ms");
+        rcfg.timeout_us = read_required<std::uint64_t>(*rtsp, "timeout_us");
+        rcfg.tcp_timeout_us = read_required<std::uint64_t>(*rtsp, "tcp_timeout_us");
+        rcfg.verbose = read_required<bool>(*rtsp, "verbose");
 
-    // Протоколы rtspsrc:
-    //(битовая маска) 1 = UDP, 4 = TCP
-    int protocols = 1;
 
-    // rtspsrc::latency (мс). 0 = минимальная задержка (но больше риск нестабильности)
-    int latency_ms = 0;
+        return true;
 
-    // rtspsrc::timeout / tcp-timeout (микросекунды).
-    // Обычно достаточно 2с, чтобы не висеть бесконечно при старте.
-    uint64_t timeout_us = 2'000'000;
-    uint64_t tcp_timeout_us = 2'000'000;
+    } catch (const std::exception &e) {
+        std::cerr << "rtsp config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};
 
-    // Принудительные caps после декодера (capsfilter).
-    // На RK (mppvideodec) типичный стабильный формат для OpenCV: NV12.
-    std::string caps_force = "video/x-raw,format=NV12";
+bool load_rtsp_watchdog(toml::table &tbl, RtspWatchDog &rtsp_wd) {
+    // ----------------------- [rtsp.watchdog] -----------------------
+    // Watchdog перезапуска RTSP, если кадры перестали приходить.
+    try {
+        const auto *rtsp_node = tbl.get("rtsp");
+        if (!rtsp_node) {
+            throw std::runtime_error("missing [rtsp] table");
+        }
+        const auto *rtsp = rtsp_node->as_table();
+        if (!rtsp) {
+            throw std::runtime_error("invalid [rtsp] table");
+        }
+        const auto *wd_node = rtsp->get("watchdog");
+        if (!wd_node) {
+            throw std::runtime_error("missing [rtsp.watchdog] table");
+        }
+        const auto *wd = wd_node->as_table();
+        if (!wd) {
+            throw std::runtime_error("invalid [rtsp.watchdog] table");
+        }
+        rtsp_wd.no_frame_timeout_ms = read_required<std::uint64_t>(*wd, "no_frame_timeout_ms");
+        rtsp_wd.restart_cooldown_ms = read_required<std::uint64_t>(*wd, "restart_cooldown_ms");
+        rtsp_wd.startup_grace_ms = read_required<std::uint64_t>(*wd, "startup_grace_ms");
 
-    // Таймаут ожидания перехода пайплайна в PLAYING на старте (мс).
-    // Если камера/сеть "тупит", лучше явно выйти с ошибкой, чем зависнуть.
-    int start_timeout_ms = 3000;
 
-    // Таймаут ожидания перехода в NULL на остановке (мс).
-    int stop_timeout_ms = 2000;
+        return true;
 
-    // Пауза после stop() перед повторным стартом (мс).
-    // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
-    int restart_delay_ms = 300;
-
-    // Подробные логи в stderr.
-    bool verbose = true;
+    } catch (const std::exception &e) {
+        std::cerr << "rtsp config load failed  " << e.what() << std::endl;
+        return false;
+    }
 
 };
 
-struct RtspWatchDog {
-    // ------------------------- [rtsp.watchdog] -------------------------
-    // Таймаут отсутствия кадров (мс)
-    std::uint64_t no_frame_timeout_ms = 1500;
+bool load_detector_config(const toml::table &tbl, DetectorConfig &dcfg) {
+    // --------------------------- [detector] ---------------------------
+    try {
+        const auto *detector = tbl["detector"].as_table();
+        if (!detector) {
+            throw std::runtime_error("missing [detector] table");
+        }
+        dcfg.diff_threshold = read_required<int>(*detector, "diff_threshold");
+        dcfg.min_area = read_required<int>(*detector, "min_area");
+        dcfg.morph_kernel = read_required<int>(*detector, "morph_kernel");
+        dcfg.downscale = read_required<double>(*detector, "downscale");
+        return true;
 
-    // Минимальный интервал между рестартами (мс)
-    std::uint64_t restart_cooldown_ms = 1000;
-
-    // Льготный период после старта (мс)
-    std::uint64_t startup_grace_ms = 3000;
+    } catch (const std::exception &e) {
+        std::cerr << "detecto config load failed  " << e.what() << std::endl;
+        return false;
+    }
 
 };
 
-// ============================================================================
-// Detector configuration
-// ============================================================================
-struct DetectorConfig {
-    // Минимальная разница яркости
-    int diff_threshold = 20;
+bool load_merge_config(const toml::table &tbl, MergeConfig &mcfg) {
+// ----------------------------- [merge] ----------------------------
+    try {
+        const auto *merge = tbl["merge"].as_table();
+        if (!merge) {
+            throw std::runtime_error("missing [merge] table");
+        }
+        mcfg.max_boxes_in_cluster = read_required<int>(*merge, "max_boxes_in_cluster");
+        mcfg.neighbor_iou_th = read_required<float>(*merge, "neighbor_iou_th");
+        mcfg.center_dist_factor = read_required<float>(*merge, "center_dist_factor");
+        mcfg.max_area_multiplier = read_required<float>(*merge, "max_area_multiplier");
+        return true;
 
-    // Минимальная площадь bbox
-    int min_area = 10;
-
-    // Размер морфологического ядра
-    int morph_kernel = 3;
-
-    // Downscale перед детекцией
-    double downscale = 1.0;
+    } catch (const std::exception &e) {
+        std::cerr << "merge config load failed  " << e.what() << std::endl;
+        return false;
+    }
 };
 
-// ============================================================================
-// Merge configuration
-// ============================================================================
-struct MergeConfig {
-    // Максимум bbox в кластере
-    int max_boxes_in_cluster = 2;
+bool load_tracker_config(const toml::table &tbl, TrackerConfig &tcfg) {
+// ---------------------------- [tracker] ---------------------------
+    try {
+        const auto *tracker = tbl["tracker"].as_table();
+        if (!tracker) {
+            throw std::runtime_error("missing [tracker] table");
+        }
+        tcfg.iou_th = read_required<float>(*tracker, "iou_th");
+        tcfg.max_missed_frames = read_required<int>(*tracker, "max_missed_frames");
+        tcfg.max_targets = read_required<int>(*tracker, "max_targets");
+        return true;
 
-    // IoU соседства
-    float neighbor_iou_th = 0.05f;
-
-    // Коэффициент расстояния между центрами
-    float center_dist_factor = 5.5f;
-
-    // Максимальный рост площади merged bbox
-    float max_area_multiplier = 3.0f;
+    } catch (const std::exception &e) {
+        std::cerr << "tracker config load failed  " << e.what() << std::endl;
+        return false;
+    }
 };
 
-// ============================================================================
-// Tracker configuration
-// ============================================================================
-struct TrackerConfig {
-    // IoU для сопоставления
-    float iou_th = 0.25f;
+bool load_static_rebind_config(const toml::table &tbl, StaticRebindConfig &srCfg) {
+// ------------------------- [static_rebind] ------------------------
+    try {
+        const auto *static_rebind = tbl["static_rebind"].as_table();
+        if (!static_rebind) {
+            throw std::runtime_error("missing [static_rebind] table");
+        }
+        srCfg.auto_rebind = read_required<bool>(*static_rebind, "auto_rebind");
+        srCfg.rebind_timeout_ms = read_required<int>(*static_rebind, "rebind_timeout_ms");
+        srCfg.distance_weight = read_required<float>(*static_rebind, "distance_weight");
+        srCfg.area_weight = read_required<float>(*static_rebind, "area_weight");
+        srCfg.larger_area_factor = read_required<float>(*static_rebind, "larger_area_factor");
+        srCfg.max_large_target_dist_frac = read_required<float>(
+                *static_rebind, "max_large_target_dist_frac");
+        srCfg.parent_iou_th = read_required<float>(*static_rebind, "parent_iou_th");
+        srCfg.reattach_score_th = read_required<float>(*static_rebind, "reattach_score_th");
+        return true;
 
-    // Максимальное число пропущенных кадров
-    int max_missed_frames = 3;
-
-    // Максимум активных целей
-    int max_targets = 50;
+    } catch (const std::exception &e) {
+        std::cerr << "static_rebind config load failed  " << e.what() << std::endl;
+        return false;
+    }
 };
 
-// ============================================================================
-// Static rebind configuration
-// ============================================================================
+bool load_overlay_config(const toml::table &tbl, OverlayConfig &ocfg) {
+    try {
+// ---------------------------- [overlay] ---------------------------
+        const auto *overlay = tbl["overlay"].as_table();
+        if (!overlay) {
+            throw std::runtime_error("missing [overlay] table");
+        }
+        ocfg.hud_alpha = read_required<float>(*overlay, "hud_alpha");
+        ocfg.unselected_alpha_when_selected = read_required<float>(
+                *overlay, "unselected_alpha_when_selected");
 
-struct StaticRebindConfig {
-    // Автоматическая перепривязка static bbox
-    bool auto_rebind = true;
+// -------------------------- [smoothing] ---------------------------
+        const auto *smoothing = tbl["smoothing"].as_table();
+        if (!smoothing) {
+            throw std::runtime_error("missing [smoothing] table");
+        }
+        ocfg.dynamic_bbox_window = read_required<int>(*smoothing, "dynamic_bbox_window");
+        return true;
 
-    // Таймаут ожидания новой цели (мс)
-    int rebind_timeout_ms = 1200;
-
-    // Вес расстояния
-    float distance_weight = 1.0f;
-
-    // Вес площади
-    float area_weight = 1.0f;
-
-    // Во сколько раз новая цель должна быть крупнее
-    float larger_area_factor = 2.0f;
-
-    // Максимальная допустимая дистанция до крупной цели
-    float max_large_target_dist_frac = 0.2f;
-
-    // IoU-порог родительской привязки
-    float parent_iou_th = 0.15f;
-
-    // Порог уверенности перепривязки
-    float reattach_score_th = 0.20f;
+    } catch (const std::exception &e) {
+        std::cerr << "overlay config load failed  " << e.what() << std::endl;
+        return false;
+    }
 };
-
-// ============================================================================
-// Overlay + Smoothing configuration
-// ============================================================================
-
-struct OverlayConfig {
-    // Прозрачность HUD
-    float hud_alpha = 0.25f;
-
-    // Прозрачность невыбранных bbox
-    float unselected_alpha_when_selected = 0.3f;
-    // -------------------------- [smoothing] ---------------------------
-    // Окно сглаживания bbox
-    int dynamic_bbox_window = 5;
-};
-
-
-// ============================================================================
-// Loader API (реализовано в config.cpp)
-// ============================================================================
-
-bool load_rtsp_config(toml::table& tbl, RtspConfig& cfg);
-bool load_rtsp_watchdog (toml::table &tbl, RtspWatchDog& rtsp_wd);
-bool load_detector_config(const toml::table& tbl, DetectorConfig& cfg);
-bool load_merge_config(const toml::table& tbl, MergeConfig& cfg);
-bool load_tracker_config(const toml::table& tbl, TrackerConfig& cfg);
-bool load_static_rebind_config(const toml::table& tbl, StaticRebindConfig& cfg);
-bool load_overlay_config(const toml::table& tbl, OverlayConfig& cfg);

@@ -36,8 +36,11 @@ add_executable(Five_Threads
         src/offset_calculator.cpp
         src/display_loop.cpp
         src/static_box_manager.cpp
-        src/config.cpp
         include/other_handlers.h
+)
+
+target_sources(Five_Threads PRIVATE
+        src/config.cpp
 )
 
 target_link_libraries(Five_Threads
