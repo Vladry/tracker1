@@ -6,38 +6,42 @@
 // ============================================================================
 // RTSP / GStreamer configuration
 // ============================================================================
-    struct RtspConfig {
-        // RTSP URL камеры. Пример:
-        // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
-        std::string url = "rtsp://192.168.144.25:8554/main.264";
+struct RtspConfig {
+    // RTSP URL камеры. Пример:
+    // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
+    std::string url = "rtsp://192.168.144.25:8554/main.264";
 
-        // Протоколы rtspsrc:
-        //(битовая маска) 1 = UDP, 4 = TCP
-        int protocols = 1;
+    // Протоколы rtspsrc:
+    //(битовая маска) 1 = UDP, 4 = TCP
+    int protocols = 1;
 
-        // rtspsrc::latency (мс). 0 = минимальная задержка (но больше риск нестабильности)
-        int latency_ms = 0;
+    // rtspsrc::latency (мс). 0 = минимальная задержка (но больше риск нестабильности)
+    int latency_ms = 0;
 
-        // rtspsrc::timeout / tcp-timeout (микросекунды).
-        // Обычно достаточно 2с, чтобы не висеть бесконечно при старте.
-        uint64_t timeout_us = 2'000'000;
-        uint64_t tcp_timeout_us = 2'000'000;
+    // rtspsrc::timeout / tcp-timeout (микросекунды).
+    // Обычно достаточно 2с, чтобы не висеть бесконечно при старте.
+    uint64_t timeout_us = 2'000'000;
+    uint64_t tcp_timeout_us = 2'000'000;
 
-        // Таймаут ожидания перехода пайплайна в PLAYING на старте (мс).
-        // Если камера/сеть "тупит", лучше явно выйти с ошибкой, чем зависнуть.
-        int start_timeout_ms = 3000;
+    // Принудительные caps после декодера (capsfilter).
+    // На RK (mppvideodec) типичный стабильный формат для OpenCV: NV12.
+    std::string caps_force = "video/x-raw,format=NV12";
 
-        // Таймаут ожидания перехода в NULL на остановке (мс).
-        int stop_timeout_ms = 2000;
+    // Таймаут ожидания перехода пайплайна в PLAYING на старте (мс).
+    // Если камера/сеть "тупит", лучше явно выйти с ошибкой, чем зависнуть.
+    int start_timeout_ms = 3000;
 
-        // Пауза после stop() перед повторным стартом (мс).
-        // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
-        int restart_delay_ms = 300;
+    // Таймаут ожидания перехода в NULL на остановке (мс).
+    int stop_timeout_ms = 2000;
 
-        // Подробные логи в stderr.
-        bool verbose = true;
+    // Пауза после stop() перед повторным стартом (мс).
+    // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
+    int restart_delay_ms = 300;
 
-    };
+    // Подробные логи в stderr.
+    bool verbose = true;
+
+};
 
 struct RtspWatchDog {
     // ------------------------- [rtsp.watchdog] -------------------------
@@ -56,48 +60,48 @@ struct RtspWatchDog {
 // Detector configuration
 // ============================================================================
 struct DetectorConfig {
-        // Минимальная разница яркости
-        int diff_threshold = 20;
+    // Минимальная разница яркости
+    int diff_threshold = 20;
 
-        // Минимальная площадь bbox
-        int min_area = 10;
+    // Минимальная площадь bbox
+    int min_area = 10;
 
-        // Размер морфологического ядра
-        int morph_kernel = 3;
+    // Размер морфологического ядра
+    int morph_kernel = 3;
 
-        // Downscale перед детекцией
-        double downscale = 1.0;
+    // Downscale перед детекцией
+    double downscale = 1.0;
 };
 
 // ============================================================================
 // Merge configuration
 // ============================================================================
 struct MergeConfig {
-        // Максимум bbox в кластере
-        int max_boxes_in_cluster = 2;
+    // Максимум bbox в кластере
+    int max_boxes_in_cluster = 2;
 
-        // IoU соседства
-        float neighbor_iou_th = 0.05f;
+    // IoU соседства
+    float neighbor_iou_th = 0.05f;
 
-        // Коэффициент расстояния между центрами
-        float center_dist_factor = 5.5f;
+    // Коэффициент расстояния между центрами
+    float center_dist_factor = 5.5f;
 
-        // Максимальный рост площади merged bbox
-        float max_area_multiplier = 3.0f;
+    // Максимальный рост площади merged bbox
+    float max_area_multiplier = 3.0f;
 };
 
 // ============================================================================
 // Tracker configuration
 // ============================================================================
 struct TrackerConfig {
-        // IoU для сопоставления
-        float iou_th = 0.25f;
+    // IoU для сопоставления
+    float iou_th = 0.25f;
 
-        // Максимальное число пропущенных кадров
-        int max_missed_frames = 3;
+    // Максимальное число пропущенных кадров
+    int max_missed_frames = 3;
 
-        // Максимум активных целей
-        int max_targets = 50;
+    // Максимум активных целей
+    int max_targets = 50;
 };
 
 // ============================================================================
@@ -105,29 +109,29 @@ struct TrackerConfig {
 // ============================================================================
 
 struct StaticRebindConfig {
-        // Автоматическая перепривязка static bbox
-        bool auto_rebind = true;
+    // Автоматическая перепривязка static bbox
+    bool auto_rebind = true;
 
-        // Таймаут ожидания новой цели (мс)
-        int rebind_timeout_ms = 1200;
+    // Таймаут ожидания новой цели (мс)
+    int rebind_timeout_ms = 1200;
 
-        // Вес расстояния
-        float distance_weight = 1.0f;
+    // Вес расстояния
+    float distance_weight = 1.0f;
 
-        // Вес площади
-        float area_weight = 1.0f;
+    // Вес площади
+    float area_weight = 1.0f;
 
-        // Во сколько раз новая цель должна быть крупнее
-        float larger_area_factor = 2.0f;
+    // Во сколько раз новая цель должна быть крупнее
+    float larger_area_factor = 2.0f;
 
-        // Максимальная допустимая дистанция до крупной цели
-        float max_large_target_dist_frac = 0.2f;
+    // Максимальная допустимая дистанция до крупной цели
+    float max_large_target_dist_frac = 0.2f;
 
-        // IoU-порог родительской привязки
-        float parent_iou_th = 0.15f;
+    // IoU-порог родительской привязки
+    float parent_iou_th = 0.15f;
 
-        // Порог уверенности перепривязки
-        float reattach_score_th = 0.20f;
+    // Порог уверенности перепривязки
+    float reattach_score_th = 0.20f;
 };
 
 // ============================================================================
@@ -135,14 +139,14 @@ struct StaticRebindConfig {
 // ============================================================================
 
 struct OverlayConfig {
-        // Прозрачность HUD
-        float hud_alpha = 0.25f;
+    // Прозрачность HUD
+    float hud_alpha = 0.25f;
 
-        // Прозрачность невыбранных bbox
-        float unselected_alpha_when_selected = 0.3f;
+    // Прозрачность невыбранных bbox
+    float unselected_alpha_when_selected = 0.3f;
     // -------------------------- [smoothing] ---------------------------
-        // Окно сглаживания bbox
-        int dynamic_bbox_window = 5;
+    // Окно сглаживания bbox
+    int dynamic_bbox_window = 5;
 };
 
 

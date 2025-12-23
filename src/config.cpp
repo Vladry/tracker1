@@ -1,135 +1,163 @@
-#include <toml++/toml.h>   // ДОЛЖНО БЫТЬ ПЕРВЫМ
-#include "config.h"
-#include <iostream>
+#pragma once
+
+#include <string>
+#include <cstdint>
+#include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
+// ============================================================================
+// RTSP / GStreamer configuration
+// ============================================================================
+struct RtspConfig {
+    // RTSP URL камеры. Пример:
+    // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
+    std::string url = "rtsp://192.168.144.25:8554/main.264";
+
+    // Протоколы rtspsrc:
+    //(битовая маска) 1 = UDP, 4 = TCP
+    int protocols = 1;
+
+    // rtspsrc::latency (мс). 0 = минимальная задержка (но больше риск нестабильности)
+    int latency_ms = 0;
+
+    // rtspsrc::timeout / tcp-timeout (микросекунды).
+    // Обычно достаточно 2с, чтобы не висеть бесконечно при старте.
+    uint64_t timeout_us = 2'000'000;
+    uint64_t tcp_timeout_us = 2'000'000;
+
+    // Принудительные caps после декодера (capsfilter).
+    // На RK (mppvideodec) типичный стабильный формат для OpenCV: NV12.
+    std::string caps_force = "video/x-raw,format=NV12";
+
+    // Таймаут ожидания перехода пайплайна в PLAYING на старте (мс).
+    // Если камера/сеть "тупит", лучше явно выйти с ошибкой, чем зависнуть.
+    int start_timeout_ms = 3000;
+
+    // Таймаут ожидания перехода в NULL на остановке (мс).
+    int stop_timeout_ms = 2000;
+
+    // Пауза после stop() перед повторным стартом (мс).
+    // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
+    int restart_delay_ms = 300;
+
+    // Подробные логи в stderr.
+    bool verbose = true;
+
+};
+
+struct RtspWatchDog {
+    // ------------------------- [rtsp.watchdog] -------------------------
+    // Таймаут отсутствия кадров (мс)
+    std::uint64_t no_frame_timeout_ms = 1500;
+
+    // Минимальный интервал между рестартами (мс)
+    std::uint64_t restart_cooldown_ms = 1000;
+
+    // Льготный период после старта (мс)
+    std::uint64_t startup_grace_ms = 3000;
+
+};
 
 // ============================================================================
-// Реализация загрузки config.toml
-//
-// Важно:
-//  - Любая ошибка парсинга не должна "убивать" приложение.
-//  - В случае ошибки оставляем дефолты из AppConfig и возвращаем false.
-//  - Все имена ключей должны соответствовать config.toml.
+// Detector configuration
 // ============================================================================
-bool load_rtsp_config(toml::table &tbl, RtspConfig &rcfg) {
-    // ----------------------------- [rtsp] -----------------------------
-    try {
-        const auto &rtsp = tbl.at("rtsp");
-        rcfg.url = rtsp.at("url").value<std::string>().value();
-        rcfg.protocols = rtsp.at("protocols").value<int>().value();
-        rcfg.latency_ms = rtsp.at("latency_ms").value<int>().value();
-        rcfg.timeout_us = rtsp.at("timeout_us").value<std::uint64_t>().value();
-        rcfg.tcp_timeout_us = rtsp.at("tcp_timeout_us").value<std::uint64_t>().value();
-        rcfg.verbose = rtsp.at("verbose").value<bool>().value();
+struct DetectorConfig {
+    // Минимальная разница яркости
+    int diff_threshold = 20;
 
+    // Минимальная площадь bbox
+    int min_area = 10;
 
-        return true;
+    // Размер морфологического ядра
+    int morph_kernel = 3;
 
-    } catch (const std::exception &e) {
-        std::cerr << "rtsp config load failed  " << e.what() << std::endl;
-        return false;
-    }
+    // Downscale перед детекцией
+    double downscale = 1.0;
 };
 
-bool load_rtsp_watchdog(toml::table &tbl, RtspWatchDog &rtsp_wd) {
-    // ----------------------- [rtsp.watchdog] -----------------------
-    // Watchdog перезапуска RTSP, если кадры перестали приходить.
-    try {
-        const auto &wd = tbl.at("rtsp.watchdog");
-        rtsp_wd.no_frame_timeout_ms = wd.at("no_frame_timeout_ms").value<std::uint64_t>().value();
-        rtsp_wd.restart_cooldown_ms = wd.at("restart_cooldown_ms").value<std::uint64_t>().value();
-        rtsp_wd.startup_grace_ms = wd.at("startup_grace_ms").value<std::uint64_t>().value();
+// ============================================================================
+// Merge configuration
+// ============================================================================
+struct MergeConfig {
+    // Максимум bbox в кластере
+    int max_boxes_in_cluster = 2;
 
+    // IoU соседства
+    float neighbor_iou_th = 0.05f;
 
-        return true;
+    // Коэффициент расстояния между центрами
+    float center_dist_factor = 5.5f;
 
-    } catch (const std::exception &e) {
-        std::cerr << "rtsp config load failed  " << e.what() << std::endl;
-        return false;
-    }
-
+    // Максимальный рост площади merged bbox
+    float max_area_multiplier = 3.0f;
 };
 
-bool load_detector_config(const toml::table &tbl, DetectorConfig &dcfg) {
-    // --------------------------- [detector] ---------------------------
-    try {
-        const auto &detector = tbl.at("detector");
-        dcfg.diff_threshold = detector.at("diff_threshold").value<int>().value();
-        dcfg.min_area = detector.at("min_area").value<int>().value();
-        dcfg.morph_kernel = detector.at("morph_kernel").value<int>().value();
-        dcfg.downscale = detector.at("downscale").value<double>().value();
-        return true;
+// ============================================================================
+// Tracker configuration
+// ============================================================================
+struct TrackerConfig {
+    // IoU для сопоставления
+    float iou_th = 0.25f;
 
-    } catch (const std::exception &e) {
-        std::cerr << "detecto config load failed  " << e.what() << std::endl;
-        return false;
-    }
+    // Максимальное число пропущенных кадров
+    int max_missed_frames = 3;
 
+    // Максимум активных целей
+    int max_targets = 50;
 };
 
-bool load_merge_config(const toml::table &tbl, MergeConfig &mcfg) {
-// ----------------------------- [merge] ----------------------------
-    try {
-        const auto &merge = tbl.at("merge");
-        mcfg.max_boxes_in_cluster = merge.at("max_boxes_in_cluster").value<int>().value();
-        mcfg.neighbor_iou_th = merge.at("neighbor_iou_th").value<float>().value();
-        mcfg.center_dist_factor = merge.at("center_dist_factor").value<float>().value();
-        mcfg.max_area_multiplier = merge.at("max_area_multiplier").value<float>().value();
+// ============================================================================
+// Static rebind configuration
+// ============================================================================
 
-    } catch (const std::exception &e) {
-        std::cerr << "merge config load failed  " << e.what() << std::endl;
-        return false;
-    }
+struct StaticRebindConfig {
+    // Автоматическая перепривязка static bbox
+    bool auto_rebind = true;
+
+    // Таймаут ожидания новой цели (мс)
+    int rebind_timeout_ms = 1200;
+
+    // Вес расстояния
+    float distance_weight = 1.0f;
+
+    // Вес площади
+    float area_weight = 1.0f;
+
+    // Во сколько раз новая цель должна быть крупнее
+    float larger_area_factor = 2.0f;
+
+    // Максимальная допустимая дистанция до крупной цели
+    float max_large_target_dist_frac = 0.2f;
+
+    // IoU-порог родительской привязки
+    float parent_iou_th = 0.15f;
+
+    // Порог уверенности перепривязки
+    float reattach_score_th = 0.20f;
 };
 
-bool load_tracker_config(const toml::table &tbl, TrackerConfig &tcfg) {
-// ---------------------------- [tracker] ---------------------------
-    try {
-        const auto &tracker = tbl.at("tracker");
-        tcfg.iou_th = tracker.at("iou_th").value<float>().value();
-        tcfg.max_missed_frames = tracker.at("max_missed_frames").value<int>().value();
-        tcfg.max_targets = tracker.at("max_targets").value<int>().value();
+// ============================================================================
+// Overlay + Smoothing configuration
+// ============================================================================
 
-    } catch (const std::exception &e) {
-        std::cerr << "tracker config load failed  " << e.what() << std::endl;
-        return false;
-    }
+struct OverlayConfig {
+    // Прозрачность HUD
+    float hud_alpha = 0.25f;
+
+    // Прозрачность невыбранных bbox
+    float unselected_alpha_when_selected = 0.3f;
+    // -------------------------- [smoothing] ---------------------------
+    // Окно сглаживания bbox
+    int dynamic_bbox_window = 5;
 };
 
-bool load_static_rebind_config(const toml::table &tbl, StaticRebindConfig &srCfg) {
-// ------------------------- [static_rebind] ------------------------
-    try {
-        const auto &static_rebind = tbl.at("static_rebind");
-        srCfg.auto_rebind = static_rebind.at("auto_rebind").value<bool>().value();
-        srCfg.rebind_timeout_ms = static_rebind.at("rebind_timeout_ms").value<int>().value();
-        srCfg.distance_weight = static_rebind.at("distance_weight").value<float>().value();
-        srCfg.area_weight = static_rebind.at("area_weight").value<float>().value();
-        srCfg.larger_area_factor = static_rebind.at("larger_area_factor").value<float>().value();
-        srCfg.max_large_target_dist_frac = static_rebind.at(
-                "max_large_target_dist_frac").value<float>().value();
-        srCfg.parent_iou_th = static_rebind.at("parent_iou_th").value<float>().value();
-        srCfg.reattach_score_th = static_rebind.at("reattach_score_th").value<float>().value();
 
-    } catch (const std::exception &e) {
-        std::cerr << "static_rebind config load failed  " << e.what() << std::endl;
-        return false;
-    }
-};
+// ============================================================================
+// Loader API (реализовано в config.cpp)
+// ============================================================================
 
-bool load_overlay_config(const toml::table &tbl, OverlayConfig &ocfg) {
-    try {
-// ---------------------------- [overlay] ---------------------------
-        const auto &overlay = tbl.at("overlay");
-        ocfg.hud_alpha = overlay.at("hud_alpha").value<float>().value();
-        ocfg.unselected_alpha_when_selected = overlay.at(
-                "unselected_alpha_when_selected").value<float>().value();
-
-// -------------------------- [smoothing] ---------------------------
-        const auto &smoothing = tbl.at("smoothing");
-        ocfg.dynamic_bbox_window = smoothing.at("dynamic_bbox_window").value<int>().value();
-
-    } catch (const std::exception &e) {
-        std::cerr << "overlay config load failed  " << e.what() << std::endl;
-        return false;
-    }
-};
-
+bool load_rtsp_config(toml::table& tbl, RtspConfig& cfg);
+bool load_rtsp_watchdog (toml::table &tbl, RtspWatchDog& rtsp_wd);
+bool load_detector_config(const toml::table& tbl, DetectorConfig& cfg);
+bool load_merge_config(const toml::table& tbl, MergeConfig& cfg);
+bool load_tracker_config(const toml::table& tbl, TrackerConfig& cfg);
+bool load_static_rebind_config(const toml::table& tbl, StaticRebindConfig& cfg);
+bool load_overlay_config(const toml::table& tbl, OverlayConfig& cfg);
