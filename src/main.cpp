@@ -258,6 +258,7 @@ int main(int argc, char *argv[]) {
     FrameStore ui_store;
 
     RtspWorker::Config rcfg;
+    load_rtsp_
     rcfg.url = cfg.rtsp.url;
     rcfg.protocols = cfg.rtsp.protocols;
     rcfg.latency_ms = cfg.rtsp.latency_ms;
@@ -340,8 +341,9 @@ int main(int argc, char *argv[]) {
     });
 
 
-    MotionDetector detector({
-                                    DET_DIFF_THRESHOLD,
+    MotionDetector detector({       // Pixel difference threshold for motion detection.
+                                    // Lower values increase sensitivity; higher values suppress noise.
+                                    cfg.detector.diff_threshold ? cfg.detector.diff_threshold : 20,
                                     DET_MIN_AREA,
                                     DET_MORPH,
                                     DET_DOWNSCALE

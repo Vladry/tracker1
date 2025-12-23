@@ -1,7 +1,6 @@
+#include <toml++/toml.h>   // ДОЛЖНО БЫТЬ ПЕРВЫМ
 #include "config.h"
-
 #include <iostream>
-#include <toml++/toml.h>
 
 // ============================================================================
 // Реализация загрузки config.toml
@@ -12,117 +11,120 @@
 //  - Все имена ключей должны соответствовать config.toml.
 // ============================================================================
 
-bool load_config(const std::string& path, AppConfig& cfg) {
+/*// Старый не нужный, реорганизовать:
+bool load_config(const std::string &path, AppConfig &cfg) {
+    const auto tbl = toml::parse_file(path);
+    const auto tbl = toml::parse_file(path);
+    return true;
+}*/
+
+bool load_rtsp_config(toml::table &tbl, RtspConfig &cfg) {
+    // ----------------------------- [rtsp] -----------------------------
     try {
-        const auto tbl = toml::parse_file(path);
-
-        // ----------------------------- [rtsp] -----------------------------
-        if (auto v = tbl["rtsp"]["url"].value<std::string>())
-            cfg.rtsp.url = *v;
-
-        if (auto v = tbl["rtsp"]["protocols"].value<int>())
-            cfg.rtsp.protocols = *v;
-
-        if (auto v = tbl["rtsp"]["latency_ms"].value<int>())
-            cfg.rtsp.latency_ms = *v;
-
-        if (auto v = tbl["rtsp"]["timeout_us"].value<std::uint64_t>())
-            cfg.rtsp.timeout_us = *v;
-
-        if (auto v = tbl["rtsp"]["tcp_timeout_us"].value<std::uint64_t>())
-            cfg.rtsp.tcp_timeout_us = *v;
-
-        if (auto v = tbl["rtsp"]["verbose"].value<bool>())
-            cfg.rtsp.verbose = *v;
-
-
+        const auto& rtsp = tbl.at("rtsp");
+        cfg.rtsp.url = rtsp.at("url").value<std::string>().value();
+        cfg.rtsp.protocols = rtsp.at("protocols").value<int>().value();
+        cfg.rtsp.latency_ms = rtsp.at("latency_ms").value<int>().value();
+        cfg.rtsp.timeout_us = rtsp.at("timeout_us").value<std::uint64_t>().value();
+        cfg.rtsp.tcp_timeout_us = rtsp.at("tcp_timeout_us").value<std::uint64_t>().value();
+        cfg.rtsp.verbose = rtsp.at("verbose").value<bool>().value();
         // ----------------------- [rtsp.watchdog] -----------------------
+        const auto &wd = rtsp.at("watchdog");
         // Watchdog перезапуска RTSP, если кадры перестали приходить.
-        if (auto v = tbl["rtsp"]["watchdog"]["no_frame_timeout_ms"].value<std::uint64_t>())
-            cfg.rtsp_watchdog.no_frame_timeout_ms = *v;
-
-        if (auto v = tbl["rtsp"]["watchdog"]["restart_cooldown_ms"].value<std::uint64_t>())
-            cfg.rtsp_watchdog.restart_cooldown_ms = *v;
-
-        if (auto v = tbl["rtsp"]["watchdog"]["startup_grace_ms"].value<std::uint64_t>())
-            cfg.rtsp_watchdog.startup_grace_ms = *v;
-
-        // --------------------------- [detector] ---------------------------
-        if (auto v = tbl["detector"]["diff_threshold"].value<int>())
-            cfg.detector.diff_threshold = *v;
-
-        if (auto v = tbl["detector"]["min_area"].value<int>())
-            cfg.detector.min_area = *v;
-
-        if (auto v = tbl["detector"]["morph_kernel"].value<int>())
-            cfg.detector.morph_kernel = *v;
-
-        if (auto v = tbl["detector"]["downscale"].value<double>())
-            cfg.detector.downscale = *v;
-
-        // ----------------------------- [merge] ----------------------------
-        if (auto v = tbl["merge"]["max_boxes_in_cluster"].value<int>())
-            cfg.merge.max_boxes_in_cluster = *v;
-
-        if (auto v = tbl["merge"]["neighbor_iou_th"].value<float>())
-            cfg.merge.neighbor_iou_th = *v;
-
-        if (auto v = tbl["merge"]["center_dist_factor"].value<float>())
-            cfg.merge.center_dist_factor = *v;
-
-        if (auto v = tbl["merge"]["max_area_multiplier"].value<float>())
-            cfg.merge.max_area_multiplier = *v;
-
-        // ---------------------------- [tracker] ---------------------------
-        if (auto v = tbl["tracker"]["iou_th"].value<float>())
-            cfg.tracker.iou_th = *v;
-
-        if (auto v = tbl["tracker"]["max_missed_frames"].value<int>())
-            cfg.tracker.max_missed_frames = *v;
-
-        if (auto v = tbl["tracker"]["max_targets"].value<int>())
-            cfg.tracker.max_targets = *v;
-
-        // ------------------------- [static_rebind] ------------------------
-        if (auto v = tbl["static_rebind"]["auto_rebind"].value<bool>())
-            cfg.static_rebind.auto_rebind = *v;
-
-        if (auto v = tbl["static_rebind"]["rebind_timeout_ms"].value<int>())
-            cfg.static_rebind.rebind_timeout_ms = *v;
-
-        if (auto v = tbl["static_rebind"]["distance_weight"].value<float>())
-            cfg.static_rebind.distance_weight = *v;
-
-        if (auto v = tbl["static_rebind"]["area_weight"].value<float>())
-            cfg.static_rebind.area_weight = *v;
-
-        if (auto v = tbl["static_rebind"]["larger_area_factor"].value<float>())
-            cfg.static_rebind.larger_area_factor = *v;
-
-        if (auto v = tbl["static_rebind"]["max_large_target_dist_frac"].value<float>())
-            cfg.static_rebind.max_large_target_dist_frac = *v;
-
-        if (auto v = tbl["static_rebind"]["parent_iou_th"].value<float>())
-            cfg.static_rebind.parent_iou_th = *v;
-
-        if (auto v = tbl["static_rebind"]["reattach_score_th"].value<float>())
-            cfg.static_rebind.reattach_score_th = *v;
-
-        // ---------------------------- [overlay] ---------------------------
-        if (auto v = tbl["overlay"]["hud_alpha"].value<float>())
-            cfg.overlay.hud_alpha = *v;
-
-        if (auto v = tbl["overlay"]["unselected_alpha_when_selected"].value<float>())
-            cfg.overlay.unselected_alpha_when_selected = *v;
-
-        // -------------------------- [smoothing] ---------------------------
-        if (auto v = tbl["smoothing"]["dynamic_bbox_window"].value<int>())
-            cfg.smoothing.dynamic_bbox_window = *v;
-
+        cfg.rtsp_watchdog.no_frame_timeout_ms = wd.at("no_frame_timeout_ms").value<std::uint64_t>().value();
+        cfg.rtsp_watchdog.restart_cooldown_ms = wd.at("restart_cooldown_ms").value<std::uint64_t>().value();
+        cfg.rtsp_watchdog.startup_grace_ms = wd.at("startup_grace_ms").value<std::uint64_t>().value();
         return true;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Config load failed (" << path << "): " << e.what() << std::endl;
+
+    } catch (const std::exception &e) {
+        std::cerr << "rtsp config load failed  " << e.what() << std::endl;
         return false;
     }
-}
+
+
+};
+
+bool load_detector_config(const toml::table &tbl, DetectorConfig &cfg) {
+    // --------------------------- [detector] ---------------------------
+    try {
+        const auto &detector = tbl.at("detector");
+        cfg.detector.diff_threshold = detector("diff_threshold").value<int>().value();
+        cfg.detector.min_area = detector("min_area").value<int>().value();
+        cfg.detector.morph_kernel = detector("morph_kernel").value<int>().value();
+        cfg.detector.downscale = detector("downscale").value<double>().value();
+        return true;
+
+    } catch (const std::exception &e) {
+        std::cerr << "detecto config load failed  " << e.what() << std::endl;
+        return false;
+    }
+
+};
+
+bool load_merge_config(const toml::table &tbl, MergeConfig &cfg) {
+// ----------------------------- [merge] ----------------------------
+    try {
+        const auto &merge = tbl.at("merge");
+        cfg.merge.max_boxes_in_cluster = merge.at("max_boxes_in_cluster").value<int>().value();
+        cfg.merge.neighbor_iou_th = merge.at("neighbor_iou_th").value<float>().value();
+        cfg.merge.center_dist_factor = merge.at("center_dist_factor").value<float>().value();
+        cfg.merge.max_area_multiplier = merge.at("max_area_multiplier").value<float>().value();
+
+    } catch (const std::exception &e) {
+        std::cerr << "merge config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};
+
+bool load_tracker_config(const toml::table &tbl, TrackerConfig &cfg) {
+// ---------------------------- [tracker] ---------------------------
+    try {
+        const auto &tracker = tbl.at("tracker");
+        cfg.tracker.iou_th = tracker.at("iou_th").value<float>().value();
+        cfg.tracker.max_missed_frames = tracker.at("max_missed_frames").value<int>().value();
+        cfg.tracker.max_targets = tracker.at("max_targets").value<int>().value();
+
+    } catch (const std::exception &e) {
+        std::cerr << "tracker config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};
+
+bool load_static_rebind_config(const toml::table &tbl, StaticRebindConfig &cfg) {
+// ------------------------- [static_rebind] ------------------------
+    try {
+        const auto &static_rebind = tbl.at("static_rebind");
+        cfg.static_rebind.auto_rebind = static_rebind.at("auto_rebind").value<bool>().value();
+        cfg.static_rebind.rebind_timeout_ms = static_rebind.at("rebind_timeout_ms").value<int>().value();
+        cfg.static_rebind.distance_weight = static_rebind.at("distance_weight").value<float>().value();
+        cfg.static_rebind.area_weight = static_rebind.at("area_weight").value<float>().value();
+        cfg.static_rebind.larger_area_factor = static_rebind.at("larger_area_factor").value<float>().value();
+        cfg.static_rebind.max_large_target_dist_frac = static_rebind.at(
+                "max_large_target_dist_frac").value<float>().value();
+        cfg.static_rebind.parent_iou_th = static_rebind.at("parent_iou_th").value<float>().value();
+        cfg.static_rebind.reattach_score_th = static_rebind.at("reattach_score_th").value<float>().value();
+
+    } catch (const std::exception &e) {
+        std::cerr << "static_rebind config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};
+
+bool load_overlay_config(const toml::table &tbl, OverlayConfig &cfg) {
+    try {
+// ---------------------------- [overlay] ---------------------------
+        const auto &overlay = tbl.at("overlay");
+        cfg.overlay.hud_alpha = overlay.at("hud_alpha").value<float>().value();
+        cfg.overlay.unselected_alpha_when_selected = overlay.at(
+                "unselected_alpha_when_selected").value<float>().value();
+
+// -------------------------- [smoothing] ---------------------------
+        const auto &smoothing = tbl.at("smoothing");
+        cfg.smoothing.dynamic_bbox_window = smoothing.at("dynamic_bbox_window").value<int>().value();
+
+    } catch (const std::exception &e) {
+        std::cerr << "overlay config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};
+
