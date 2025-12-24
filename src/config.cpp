@@ -93,23 +93,6 @@ bool load_merge_config(const toml::table &tbl, MergeConfig &mcfg) {
     }
 };
 
-bool load_tracker_config(const toml::table &tbl, TrackerConfig &tcfg) {
-// ---------------------------- [tracker] ---------------------------
-    try {
-        const auto *tracker = tbl["tracker"].as_table();
-        if (!tracker) {
-            throw std::runtime_error("missing [tracker] table");
-        }
-        tcfg.iou_th = read_required<float>(*tracker, "iou_th");
-        tcfg.max_missed_frames = read_required<int>(*tracker, "max_missed_frames");
-        tcfg.max_targets = read_required<int>(*tracker, "max_targets");
-        return true;
-
-    } catch (const std::exception &e) {
-        std::cerr << "tracker config load failed  " << e.what() << std::endl;
-        return false;
-    }
-};
 
 bool load_static_rebind_config(const toml::table &tbl, StaticRebindConfig &srCfg) {
 // ------------------------- [static_rebind] ------------------------

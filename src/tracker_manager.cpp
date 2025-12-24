@@ -1,7 +1,30 @@
+#include <toml++/toml.h>   // ДОЛЖНО БЫТЬ ПЕРВЫМ
 #include "tracker_manager.h"
-#include <algorithm>
+//#include <algorithm>
+#include "config.h"
 
-TrackerManager::TrackerManager(const TrackerConfig& cfg) : cfg_(cfg) {}
+TrackerManager::TrackerManager(const toml::table& tbl) {
+    this->load_tracker_config(tbl);
+}
+
+bool TrackerManager::load_tracker_config(const toml::table& tbl) {
+// ---------------------------- [tracker] ---------------------------
+    try {
+        const auto *tracker = tbl["tracker"].as_table();
+        if (!tracker) {
+            throw std::runtime_error("missing [tracker] table");
+        }
+        this->cfg_.iou_th = read_required<float>(*tracker, "iou_th");
+        cfg_.max_missed_frames = read_required<int>(*tracker, "max_missed_frames");
+        cfg_.max_targets = read_required<int>(*tracker, "max_targets");
+        return true;
+
+    } catch (const std::exception &e) {
+        std::cerr << "tracker config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};
+
 
 void TrackerManager::reset() {
     tracks_.clear();

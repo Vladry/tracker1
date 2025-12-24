@@ -27,8 +27,8 @@ bool MotionDetector::load_detector_config(const toml::table& tbl) {
 };
 
 std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
-    std::vector<cv::Rect2f>   ;
-    if (frame_bgr.empty()) return   ;
+    std::vector<cv::Rect2f> out;
+    if (frame_bgr.empty()) return out;
 
     cv::Mat frame = frame_bgr;
     cv::Mat small;
@@ -43,7 +43,7 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
 
     if (prev_gray_.empty()) {
         prev_gray_ = gray;
-        return   ;
+        return out;
     }
 
     cv::Mat diff;
@@ -71,9 +71,9 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
         if (s > 0.0 && s < 1.0) {
             rf.x /= (float)s; rf.y /= (float)s; rf.width /= (float)s; rf.height /= (float)s;
         }
-          .push_back(rf);
+        out.push_back(rf);
     }
-    return   ;
+    return out;
 }
 
 
