@@ -2,10 +2,10 @@
 #include "detector.h"
 #include "config.h"
 
-//MotionDetector::MotionDetector(DetectorConfig dcfg) : cfg_(dcfg) {}
-MotionDetector::MotionDetector(const toml::table tbl) {
+MotionDetector::MotionDetector(const toml::table& tbl) {
     this->load_detector_config(tbl);
 }
+
 
 std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
     std::vector<cv::Rect2f> out;
@@ -34,8 +34,8 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
     cv::Mat thr;
     cv::threshold(diff, thr, cfg_.diff_threshold, 255, cv::THRESH_BINARY);
 
-    if (cfg_.morph > 0) {
-        cv::Mat k = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(cfg_.morph, cfg_.morph));
+    if (cfg_.morph_kernel > 0) {
+        cv::Mat k = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(cfg_.morph_kernel, cfg_.morph_kernel));
         cv::morphologyEx(thr, thr, cv::MORPH_CLOSE, k);
         cv::morphologyEx(thr, thr, cv::MORPH_OPEN, k);
     }
@@ -64,10 +64,10 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
             if (!detector) {
                 throw std::runtime_error("missing [detector] table");
             }
-            this->diff_threshold = read_required<int>(*detector, "diff_threshold");
-            this->m in_area = read_required<int>(*detector, "min_area");
-            this->morph_kernel = read_required<int>(*detector, "morph_kernel");
-            this->downscale = read_required<double>(*detector, "downscale");
+            cfg_.diff_threshold = read_required<int>(*detector, "diff_threshold");
+            cfg_.min_area = read_required<int>(*detector, "min_area");
+            cfg_.morph_kernel = read_required<int>(*detector, "morph_kernel");
+            cfg_.downscale = read_required<double>(*detector, "downscale");
             return true;
 
         } catch (const std::exception &e) {

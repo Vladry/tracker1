@@ -4,10 +4,6 @@
 #include "config.h"
 #include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
 
-
-
-
-
 class MotionDetector {
 private:
     struct DetectorConfig {
@@ -25,7 +21,7 @@ private:
     };
 
     //    explicit MotionDetector(DetectorConfig dcfg);
-    MotionDetector(const toml::table& tbl);
+    explicit MotionDetector(const toml::table& tbl);
 
     // Returns detections in input frame coordinates (BGR)
     std::vector<cv::Rect2f> detect(const cv::Mat& frame_bgr);
