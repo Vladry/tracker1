@@ -273,7 +273,7 @@ int main(int argc, char *argv[]) {
     load_rtsp_watchdog(tbl, rtsp_watchdog);
     MotionDetector detector(tbl);
     TrackerManager tracker(tbl);
-
+    OverlayRenderer overlay(tbl);
 
     RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();
@@ -337,11 +337,6 @@ int main(int argc, char *argv[]) {
         std::cout << "[CTRL] Control thread exit" << std::endl;
     });
 
-
-    OverlayRenderer overlay({
-                                    HUD_ALPHA,
-                                    UNSELECTED_ALPHA_WHEN_SELECTED
-                            });
 
     static_box_manager static_mgr({
                                           STATIC_AUTO_REBIND_ON_LOSS,

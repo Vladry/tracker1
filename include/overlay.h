@@ -6,6 +6,7 @@
 
 #include "tracker_manager.h"      // struct Target { int id; cv::Rect bbox; ... }
 #include "static_box_manager.h"   // struct static_box { int id; cv::Rect rect; static_box_state state; ... }
+#include "config.h"
 
 //------------------------------------------------------------------------------
 // OverlayRenderer
@@ -20,10 +21,11 @@ class OverlayRenderer {
 public:
     struct Config {
         float hud_alpha;
-        float unselected_alpha_when_selected;
+        float unselected_alpha_when_selected; //TODO
+        int dynamic_bbox_window; //TODO
     };
 
-    explicit OverlayRenderer(const Config& cfg);
+    explicit OverlayRenderer(const toml::table& tbl);
 
     // Draw dynamic tracked targets.
     // selected_id currently unused for dynamics; kept for future extension.
@@ -41,6 +43,7 @@ public:
 
 private:
     Config cfg_;
+    bool load_overlay_config(const toml::table& tbl);
 
     static cv::Rect clip_rect(const cv::Rect& r, int w, int h);
 

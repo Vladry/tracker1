@@ -3,7 +3,8 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include "target.h"
-#include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО внизу. forward-decl НЕЛЬЗЯ
+#include "config.h"
+//#include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО внизу. forward-decl НЕЛЬЗЯ
 
 // IoU-based tracker WITHOUT Kalman filter.
 // - Tracks are updated purely by assignment to detections (IoU >= threshold).

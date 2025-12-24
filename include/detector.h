@@ -2,7 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include "config.h"
-#include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
+//#include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
 
 class MotionDetector {
 private:

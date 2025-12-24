@@ -149,4 +149,4 @@ bool load_rtsp_config(toml::table& tbl, RtspConfig& cfg);
 bool load_rtsp_watchdog (toml::table &tbl, RtspWatchDog& rtsp_wd);
 bool load_merge_config(const toml::table& tbl, MergeConfig& cfg);
 bool load_static_rebind_config(const toml::table& tbl, StaticRebindConfig& cfg);
-bool load_overlay_config(const toml::table& tbl, OverlayConfig& cfg);
+

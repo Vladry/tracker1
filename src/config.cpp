@@ -118,27 +118,4 @@ bool load_static_rebind_config(const toml::table &tbl, StaticRebindConfig &srCfg
     }
 };
 
-bool load_overlay_config(const toml::table &tbl, OverlayConfig &ocfg) {
-    try {
-// ---------------------------- [overlay] ---------------------------
-        const auto *overlay = tbl["overlay"].as_table();
-        if (!overlay) {
-            throw std::runtime_error("missing [overlay] table");
-        }
-        ocfg.hud_alpha = read_required<float>(*overlay, "hud_alpha");
-        ocfg.unselected_alpha_when_selected = read_required<float>(
-                *overlay, "unselected_alpha_when_selected");
 
-// -------------------------- [smoothing] ---------------------------
-        const auto *smoothing = tbl["smoothing"].as_table();
-        if (!smoothing) {
-            throw std::runtime_error("missing [smoothing] table");
-        }
-        ocfg.dynamic_bbox_window = read_required<int>(*smoothing, "dynamic_bbox_window");
-        return true;
-
-    } catch (const std::exception &e) {
-        std::cerr << "overlay config load failed  " << e.what() << std::endl;
-        return false;
-    }
-};

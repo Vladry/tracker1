@@ -1,7 +1,5 @@
 #include "overlay.h"
-
-#include <algorithm>
-#include <cstdio>
+//#include <algorithm>
 #include <deque>
 #include <unordered_map>
 #include <unordered_set>
@@ -75,8 +73,9 @@ static cv::Rect smooth_bbox_for_render(int id, const cv::Rect& current) {
 //------------------------------------------------------------------------------
 // Конструктор
 //------------------------------------------------------------------------------
-OverlayRenderer::OverlayRenderer(const Config& cfg)
-        : cfg_(cfg) {}
+OverlayRenderer::OverlayRenderer(const toml::table& tbl){
+    load_overlay_config(tbl);
+}
 
 //------------------------------------------------------------------------------
 // Вспомогательные утилиты
@@ -240,3 +239,28 @@ void OverlayRenderer::render_static_boxes(
 #endif
     }
 }
+
+bool OverlayRenderer::load_overlay_config(const toml::table &tbl) {
+    try {
+// ---------------------------- [overlay] ---------------------------
+        const auto *overlay = tbl["overlay"].as_table();
+        if (!overlay) {
+            throw std::runtime_error("missing [overlay] table");
+        }
+        cfg_.hud_alpha = read_required<float>(*overlay, "hud_alpha");
+        cfg_.unselected_alpha_when_selected = read_required<float>(
+                *overlay, "unselected_alpha_when_selected");
+
+// -------------------------- [smoothing] ---------------------------
+        const auto *smoothing = tbl["smoothing"].as_table();
+        if (!smoothing) {
+            throw std::runtime_error("missing [smoothing] table");
+        }
+        cfg_.dynamic_bbox_window = read_required<int>(*smoothing, "dynamic_bbox_window");
+        return true;
+
+    } catch (const std::exception &e) {
+        std::cerr << "overlay config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};

@@ -1,9 +1,7 @@
-#include <toml++/toml.h>   // ДОЛЖНО БЫТЬ ПЕРВЫМ
 #include "detector.h"
-#include "config.h"
 
 MotionDetector::MotionDetector(const toml::table& tbl) {
-    this->load_detector_config(tbl);
+    load_detector_config(tbl);
 }
 
 bool MotionDetector::load_detector_config(const toml::table& tbl) {

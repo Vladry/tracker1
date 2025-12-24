@@ -1,10 +1,8 @@
-#include <toml++/toml.h>   // ДОЛЖНО БЫТЬ ПЕРВЫМ
 #include "tracker_manager.h"
-//#include <algorithm>
-#include "config.h"
+
 
 TrackerManager::TrackerManager(const toml::table& tbl) {
-    this->load_tracker_config(tbl);
+    load_tracker_config(tbl);
 }
 
 bool TrackerManager::load_tracker_config(const toml::table& tbl) {
