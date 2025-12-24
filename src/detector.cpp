@@ -6,6 +6,25 @@ MotionDetector::MotionDetector(const toml::table& tbl) {
     this->load_detector_config(tbl);
 }
 
+bool MotionDetector::load_detector_config(const toml::table& tbl) {
+    // --------------------------- [detector] ---------------------------
+    try {
+        const auto *detector = tbl["detector"].as_table();
+        if (!detector) {
+            throw std::runtime_error("missing [detector] table");
+        }
+        cfg_.diff_threshold = read_required<int>(*detector, "diff_threshold");
+        cfg_.min_area = read_required<int>(*detector, "min_area");
+        cfg_.morph_kernel = read_required<int>(*detector, "morph_kernel");
+        cfg_.downscale = read_required<double>(*detector, "downscale");
+        return true;
+
+    } catch (const std::exception &e) {
+        std::cerr << "detecto config load failed  " << e.what() << std::endl;
+        return false;
+    }
+
+};
 
 std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
     std::vector<cv::Rect2f> out;
@@ -57,25 +76,6 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
     return out;
 }
 
- bool MotionDetector::load_detector_config(const toml::table& tbl) {
-        // --------------------------- [detector] ---------------------------
-        try {
-            const auto *detector = tbl["detector"].as_table();
-            if (!detector) {
-                throw std::runtime_error("missing [detector] table");
-            }
-            cfg_.diff_threshold = read_required<int>(*detector, "diff_threshold");
-            cfg_.min_area = read_required<int>(*detector, "min_area");
-            cfg_.morph_kernel = read_required<int>(*detector, "morph_kernel");
-            cfg_.downscale = read_required<double>(*detector, "downscale");
-            return true;
 
-        } catch (const std::exception &e) {
-            std::cerr << "detecto config load failed  " << e.what() << std::endl;
-            return false;
-        }
-
-
-};
 
 

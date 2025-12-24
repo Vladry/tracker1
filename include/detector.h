@@ -20,7 +20,7 @@ private:
         double downscale = 1.0;
     };
 
-    //    explicit MotionDetector(DetectorConfig dcfg);
+public:
     explicit MotionDetector(const toml::table& tbl);
 
     // Returns detections in input frame coordinates (BGR)

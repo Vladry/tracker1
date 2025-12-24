@@ -9,7 +9,6 @@
 
 #include "frame_store.h"
 #include "rtsp_worker.h"
-#include "detector.h"
 #include "tracker_manager.h"
 #include "static_box_manager.h"
 #include "overlay.h"
@@ -274,7 +273,7 @@ int main(int argc, char *argv[]) {
     load_rtsp_config(tbl, rcfg);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
 //    load_detector_config(tbl, dcfg);
-    MotionDetector detector = MotionDetector(tbl);
+    MotionDetector detector(tbl);
 
     RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();
@@ -339,29 +338,7 @@ int main(int argc, char *argv[]) {
     });
 
 
-    //------------------------------------------------------------------------------
-    // Pixel difference threshold for motion detection.
-    // Lower values increase sensitivity; higher values suppress noise.
-    static const int DET_DIFF_THRESHOLD = dcfg.diff_threshold ? dcfg.diff_threshold : 20;
-    //------------------------------------------------------------------------------
-// Minimum area (in pixels) for a motion region to become a DYNAMIC box.
-    static const int DET_MIN_AREA = dcfg.min_area ? dcfg.min_area : 10;
-//------------------------------------------------------------------------------
-// Morphological kernel size for cleaning the motion mask.
-    static const int DET_MORPH = dcfg.morph_kernel ? dcfg.morph_kernel : 3;
-//------------------------------------------------------------------------------
-// Downscale factor applied before motion detection.
-// 1.0 = full resolution, < 1.0 = faster but less precise.
-    static const double DET_DOWNSCALE = dcfg.downscale ? dcfg.downscale : 1.0;
 
-
-    MotionDetector detector({       // Pixel difference threshold for motion detection.
-                                    // Lower values increase sensitivity; higher values suppress noise.
-                                    dcfg.diff_threshold ? dcfg.diff_threshold : 20,
-                                    DET_MIN_AREA,
-                                    DET_MORPH,
-                                    DET_DOWNSCALE
-                            });
 
     TrackerManager tracker({
                                    TRACK_IOU_TH,
