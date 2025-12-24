@@ -9,42 +9,39 @@ pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
 
 find_package(OpenCV REQUIRED)
 
+add_executable(Five_Threads)
+
 configure_file(
         ${CMAKE_SOURCE_DIR}/config.toml
         ${CMAKE_BINARY_DIR}/config.toml
         COPYONLY
 )
 
-include_directories(
+target_sources(Five_Threads PRIVATE
+        src/config.cpp
+        src/detector.cpp
+        src/display_loop.cpp
+        src/frame_store.cpp
+        src/main.cpp
+        src/offset_calculator.cpp
+        src/overlay.cpp
+        src/rtsp_worker.cpp
+        src/static_box_manager.cpp
+        src/tracker_manager.cpp
+)
+
+target_include_directories(Five_Threads PRIVATE
         ${GST_INCLUDE_DIRS}
         ${OpenCV_INCLUDE_DIRS}
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
-
 )
 
-link_directories(${GST_LIBRARY_DIRS})
-add_definitions(${GST_CFLAGS_OTHER})
-
-add_executable(Five_Threads
-        src/main.cpp
-        src/rtsp_worker.cpp
-        src/frame_store.cpp
-        src/detector.cpp
-        src/tracker_manager.cpp
-        src/overlay.cpp
-        src/offset_calculator.cpp
-        src/display_loop.cpp
-        src/static_box_manager.cpp
-        include/other_handlers.h
-)
-
-target_sources(Five_Threads PRIVATE
-        src/config.cpp
-)
-
-target_link_libraries(Five_Threads
+target_link_libraries(Five_Threads PRIVATE
         ${GST_LIBRARIES}
         ${OpenCV_LIBS}
         pthread
 )
+
+add_definitions(${GST_CFLAGS_OTHER})
+link_directories(${GST_LIBRARY_DIRS})
