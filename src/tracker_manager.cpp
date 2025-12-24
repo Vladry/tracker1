@@ -1,7 +1,7 @@
 #include "tracker_manager.h"
 #include <algorithm>
 
-TrackerManager::TrackerManager(const Config& cfg) : cfg_(cfg) {}
+TrackerManager::TrackerManager(const TrackerConfig& cfg) : cfg_(cfg) {}
 
 void TrackerManager::reset() {
     tracks_.clear();

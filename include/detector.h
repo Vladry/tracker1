@@ -29,6 +29,7 @@ public:
 private:
     DetectorConfig cfg_;
     cv::Mat prev_gray_;
+
     bool load_detector_config(const toml::table& tbl);
 };
 

@@ -1,4 +1,4 @@
-# This is a basic version file for the Config-mode of find_package().
+# This is a basic version file for the TrackerConfig-mode of find_package().
 # It is used by write_basic_package_version_file() as input file for configure_file()
 # to create a version-file which can be installed along a config.cmake file.
 #

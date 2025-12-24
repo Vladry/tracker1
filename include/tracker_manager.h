@@ -8,13 +8,20 @@
 // - If not matched, track is kept for max_missed_frames and then removed.
 class TrackerManager {
 public:
-    struct Config {
+    // ============================================================================
+// Tracker configuration
+// ============================================================================
+    struct TrackerConfig {
+        // IoU для сопоставления
         float iou_threshold = 0.25f;
-        int max_missed_frames = 30; // hold track for this many frames without detection
+        // Максимальное число пропущенных кадров без детекции
+        int max_missed_frames = 30;
+        // Максимумальное кол-во отслеживаемых активных целей
         int max_targets = 10;
     };
 
-    explicit TrackerManager(const Config& cfg);
+
+    explicit TrackerManager(const TrackerConfig& cfg);
 
     void reset();
 
@@ -40,7 +47,7 @@ private:
     static float iou(const cv::Rect2f& a, const cv::Rect2f& b);
 
 private:
-    Config cfg_;
+    TrackerConfig cfg_;
     int next_id_ = 1;
     std::vector<Track> tracks_;
     std::vector<Target> targets_;
