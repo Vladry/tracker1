@@ -274,6 +274,7 @@ int main(int argc, char *argv[]) {
     MotionDetector detector(tbl);
     TrackerManager tracker(tbl);
 
+
     RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();
 
@@ -336,14 +337,6 @@ int main(int argc, char *argv[]) {
         std::cout << "[CTRL] Control thread exit" << std::endl;
     });
 
-
-
-
-/*    TrackerManager tracker({
-                                   TRACK_IOU_TH,
-                                   TRACK_MAX_MISSED_FRAMES,
-                                   MAX_TARGETS
-                           });*/
 
     OverlayRenderer overlay({
                                     HUD_ALPHA,

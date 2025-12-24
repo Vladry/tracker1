@@ -14,7 +14,7 @@ bool TrackerManager::load_tracker_config(const toml::table& tbl) {
         if (!tracker) {
             throw std::runtime_error("missing [tracker] table");
         }
-        this->cfg_.iou_th = read_required<float>(*tracker, "iou_th");
+        cfg_.iou_threshold = read_required<float>(*tracker, "iou_th");
         cfg_.max_missed_frames = read_required<int>(*tracker, "max_missed_frames");
         cfg_.max_targets = read_required<int>(*tracker, "max_targets");
         return true;
