@@ -17,6 +17,7 @@
 #include <thread>
 #include "display_loop.h"
 #include "other_handlers.h"
+#include "detector.h"
 
 #define SHOW_IDS = false;
 
@@ -266,13 +267,14 @@ int main(int argc, char *argv[]) {
     // создаём объекты конфигураций
     RtspConfig rcfg;
     RtspWatchDog rtsp_watchdog;
-    DetectorConfig dcfg;
+//    DetectorConfig dcfg;
 
     // получаем конфигурации из config.toml
     toml::table tbl = toml::parse_file("config.toml");
     load_rtsp_config(tbl, rcfg);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
-    load_detector_config(tbl, dcfg);
+//    load_detector_config(tbl, dcfg);
+    MotionDetector detector = MotionDetector(tbl);
 
     RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();

@@ -1,6 +1,11 @@
+#include <toml++/toml.h>   // ДОЛЖНО БЫТЬ ПЕРВЫМ
 #include "detector.h"
+#include "config.h"
 
-MotionDetector::MotionDetector(const Config& cfg) : cfg_(cfg) {}
+//MotionDetector::MotionDetector(DetectorConfig dcfg) : cfg_(dcfg) {}
+MotionDetector::MotionDetector(const toml::table tbl) {
+    this->load_detector_config(tbl);
+}
 
 std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
     std::vector<cv::Rect2f> out;
@@ -51,3 +56,26 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
     }
     return out;
 }
+
+ bool MotionDetector::load_detector_config(const toml::table& tbl) {
+        // --------------------------- [detector] ---------------------------
+        try {
+            const auto *detector = tbl["detector"].as_table();
+            if (!detector) {
+                throw std::runtime_error("missing [detector] table");
+            }
+            this->diff_threshold = read_required<int>(*detector, "diff_threshold");
+            this->m in_area = read_required<int>(*detector, "min_area");
+            this->morph_kernel = read_required<int>(*detector, "morph_kernel");
+            this->downscale = read_required<double>(*detector, "downscale");
+            return true;
+
+        } catch (const std::exception &e) {
+            std::cerr << "detecto config load failed  " << e.what() << std::endl;
+            return false;
+        }
+
+
+};
+
+

@@ -4,18 +4,6 @@
 #include <stdexcept>
 #include <string_view>
 
-template <typename T>
-static T read_required(const toml::table &tbl, std::string_view key) {
-    const auto *node = tbl.get(key);
-    if (!node) {
-        throw std::runtime_error("missing key");
-    }
-    const auto value = node->value<T>();
-    if (!value) {
-        throw std::runtime_error("invalid value");
-    }
-    return *value;
-}
 
 // ============================================================================
 // Реализация загрузки config.toml
@@ -81,26 +69,6 @@ bool load_rtsp_watchdog(toml::table &tbl, RtspWatchDog &rtsp_wd) {
 
     } catch (const std::exception &e) {
         std::cerr << "rtsp config load failed  " << e.what() << std::endl;
-        return false;
-    }
-
-};
-
-bool load_detector_config(const toml::table &tbl, DetectorConfig &dcfg) {
-    // --------------------------- [detector] ---------------------------
-    try {
-        const auto *detector = tbl["detector"].as_table();
-        if (!detector) {
-            throw std::runtime_error("missing [detector] table");
-        }
-        dcfg.diff_threshold = read_required<int>(*detector, "diff_threshold");
-        dcfg.min_area = read_required<int>(*detector, "min_area");
-        dcfg.morph_kernel = read_required<int>(*detector, "morph_kernel");
-        dcfg.downscale = read_required<double>(*detector, "downscale");
-        return true;
-
-    } catch (const std::exception &e) {
-        std::cerr << "detecto config load failed  " << e.what() << std::endl;
         return false;
     }
 

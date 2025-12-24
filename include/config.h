@@ -3,6 +3,22 @@
 #include <string>
 #include <cstdint>
 #include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
+
+
+template <typename T>
+static T read_required(const toml::table &tbl, std::string_view key) {
+    const auto *node = tbl.get(key);
+    if (!node) {
+        throw std::runtime_error("missing key");
+    }
+    const auto value = node->value<T>();
+    if (!value) {
+        throw std::runtime_error("invalid value");
+    }
+    return *value;
+}
+
+
 // ============================================================================
 // RTSP / GStreamer configuration
 // ============================================================================
@@ -59,19 +75,7 @@ struct RtspWatchDog {
 // ============================================================================
 // Detector configuration
 // ============================================================================
-struct DetectorConfig {
-    // Минимальная разница яркости
-    int diff_threshold = 20;
 
-    // Минимальная площадь bbox
-    int min_area = 10;
-
-    // Размер морфологического ядра
-    int morph_kernel = 3;
-
-    // Downscale перед детекцией
-    double downscale = 1.0;
-};
 
 // ============================================================================
 // Merge configuration
@@ -156,7 +160,6 @@ struct OverlayConfig {
 
 bool load_rtsp_config(toml::table& tbl, RtspConfig& cfg);
 bool load_rtsp_watchdog (toml::table &tbl, RtspWatchDog& rtsp_wd);
-bool load_detector_config(const toml::table& tbl, DetectorConfig& cfg);
 bool load_merge_config(const toml::table& tbl, MergeConfig& cfg);
 bool load_tracker_config(const toml::table& tbl, TrackerConfig& cfg);
 bool load_static_rebind_config(const toml::table& tbl, StaticRebindConfig& cfg);

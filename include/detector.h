@@ -1,22 +1,39 @@
 #pragma once
 #include <opencv2/opencv.hpp>
 #include <vector>
+#include "config.h"
+#include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
+
+
+
+
 
 class MotionDetector {
-public:
-    struct Config {
-        int diff_threshold = 25;
-        int min_area = 250;
-        int morph = 3;
-        double downscale = 1.0; // 1.0 = no downscale
+private:
+    struct DetectorConfig {
+        // Минимальная разница яркости
+        int diff_threshold = 20;
+
+        // Минимальная площадь bbox
+        int min_area = 10;
+
+        // Размер морфологического ядра
+        int morph_kernel = 3;
+
+        // Downscale перед детекцией
+        double downscale = 1.0;
     };
 
-    explicit MotionDetector(const Config& cfg);
+    //    explicit MotionDetector(DetectorConfig dcfg);
+    MotionDetector(const toml::table& tbl);
 
     // Returns detections in input frame coordinates (BGR)
     std::vector<cv::Rect2f> detect(const cv::Mat& frame_bgr);
 
 private:
-    Config cfg_;
+    DetectorConfig cfg_;
     cv::Mat prev_gray_;
+
+    bool load_detector_config(const toml::table& tbl);
 };
+
