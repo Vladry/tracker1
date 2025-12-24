@@ -31,7 +31,7 @@ public:
             cv::Mat& frame,
             const std::vector<Target>& targets,
             int selected_id
-    );
+    ) const ;
 
     // Draw static user-locked boxes.
     void render_static_boxes(

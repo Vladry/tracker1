@@ -36,44 +36,8 @@ public:
         ERROR          // ошибка/зависание (рабочий поток завершился с ошибкой)
     };
 
-/*    struct Config {
-        // RTSP URL камеры. Пример:
-        // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
-        std::string url = "rtsp://192.168.144.25:8554/main.264";
-
-        // rtspsrc::protocols (битовая маска). 1 = UDP, 4 = TCP.
-        // Для вашей камеры вы чаще используете UDP: protocols = 1
-        int protocols = 1;
-
-        // rtspsrc::latency (мс). 0 = минимальная задержка (но больше риск нестабильности)
-        int latency_ms = 0;
-
-        // rtspsrc::timeout / tcp-timeout (микросекунды).
-        // Обычно достаточно 2с, чтобы не висеть бесконечно при старте.
-        uint64_t timeout_us = 2'000'000;
-        uint64_t tcp_timeout_us = 2'000'000;
-
-        // Принудительные caps после декодера (capsfilter).
-        // На RK (mppvideodec) типичный стабильный формат для OpenCV: NV12.
-        std::string caps_force = "video/x-raw,format=NV12";
-
-        // Таймаут ожидания перехода пайплайна в PLAYING на старте (мс).
-        // Если камера/сеть "тупит", лучше явно выйти с ошибкой, чем зависнуть.
-        int start_timeout_ms = 3000;
-
-        // Таймаут ожидания перехода в NULL на остановке (мс).
-        int stop_timeout_ms = 2000;
-
-        // Пауза после stop() перед повторным стартом (мс).
-        // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
-        int restart_delay_ms = 300;
-
-        // Подробные логи в stderr.
-        bool verbose = true;
-    };*/
-
 public:
-    RtspWorker(FrameStore& store, const RtspConfig& cfg);
+    RtspWorker(FrameStore& store, RtspConfig  cfg);
     ~RtspWorker();
 
     // Запуск RTSP-потока (если уже запущен — ничего не делает).

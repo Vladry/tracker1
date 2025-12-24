@@ -18,28 +18,9 @@
 #include "display_loop.h"
 #include "other_handlers.h"
 
-// ===================== GLOBAL TUNABLE CONSTANTS =====================
-//
-// Dynamic box  = временный bbox от детектора / трекера
-// Static  box  = пользовательский bbox, созданный кликом мыши
-// ===================================================================
-
 #define SHOW_IDS = false;
 
-//------------------------------------------------------------------------------
-// Максимально допустимая кратность площади результирующего merged-бокса
-// относительно площади САМОГО КРУПНОГО динамического бокса в кластере.
-// Значение 3.0 означает, что merged-бокс не может превышать
-// площадь largest_bbox * 3.
-// Используется для ограничения разрастания merged-целей.
 
-// =====================================================================
-// Глобальные флаги управления приложением
-//
-// ВАЖНО:
-//  - выставляются из UI-потока (там где cv::imshow + cv::pollKey)
-//  - обрабатываются в control-потоке (watchdog / restart RTSP)
-// =====================================================================
 std::atomic<bool> g_running{true};
 std::atomic<bool> g_rtsp_restart_requested{false};
 
@@ -53,50 +34,7 @@ static inline long long now_steady_ms() {
             std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-static constexpr float MERGE_MAX_AREA_MULTIPLIER = 3.0f;
 
-// Константа сглаживания мелькания размеров dynamic bbox-ов: (в overlay.cpp или main.cpp)
-static constexpr int DYN_SMOOTH_WINDOW = 15;
-//------------------------------------------------------------------------------
-// Maximum number of simultaneously tracked DYNAMIC boxes.
-// Limits tracker memory usage and prevents CPU spikes on noisy scenes.
-static constexpr int MAX_TARGETS = 50;
-
-
-//------------------------------------------------------------------------------
-// IoU threshold for matching DYNAMIC boxes between frames.
-static constexpr float TRACK_IOU_TH = 0.25f;
-
-
-//------------------------------------------------------------------------------
-// How many consecutive frames a DYNAMIC box may be missing
-// before its track is dropped.
-static constexpr int TRACK_MAX_MISSED_FRAMES = 3;
-
-
-//------------------------------------------------------------------------------
-// Maximum number of DYNAMIC boxes merged into one cluster.
-static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 2;
-
-
-//------------------------------------------------------------------------------
-// Minimal IoU at which two DYNAMIC boxes are considered neighbors.
-static constexpr float MERGE_NEIGHBOR_IOU_TH = 0.05f;
-
-
-//------------------------------------------------------------------------------
-// Center-distance factor for merging DYNAMIC boxes with weak overlap.
-static constexpr float MERGE_CENTER_DIST_FACTOR = 5.5f;
-
-
-//------------------------------------------------------------------------------
-// Global transparency for HUD / overlay elements.
-static constexpr float HUD_ALPHA = 0.25f;
-
-
-//------------------------------------------------------------------------------
-// Transparency applied to NON-selected objects when a STATIC box exists.
-static constexpr float UNSELECTED_ALPHA_WHEN_SELECTED = 0.3f;
 
 
 // ===================== STATIC BOX SETTINGS =====================
@@ -169,6 +107,76 @@ static inline float center_dist(const cv::Rect2f &a, const cv::Rect2f &b) {
 static inline float ref_size(const cv::Rect2f &r) {
     return std::max(10.0f, 0.5f * (r.width + r.height));
 }
+
+
+
+
+
+
+
+
+
+// ===================== GLOBAL TUNABLE CONSTANTS =====================
+//
+// Dynamic box  = временный bbox от детектора / трекера
+// Static  box  = пользовательский bbox, созданный кликом мыши
+
+// ===================================================================
+
+//------------------------------------------------------------------------------
+// Максимально допустимая кратность площади результирующего merged-бокса
+// относительно площади САМОГО КРУПНОГО динамического бокса в кластере.
+// Значение 3.0 означает, что merged-бокс не может превышать
+// площадь largest_bbox * 3.
+// Используется для ограничения разрастания merged-целей.
+
+// =====================================================================
+static constexpr float MERGE_MAX_AREA_MULTIPLIER = 3.0f;
+
+
+// Константа сглаживания мелькания размеров dynamic bbox-ов: (в overlay.cpp или main.cpp)
+static constexpr int DYN_SMOOTH_WINDOW = 15;
+//------------------------------------------------------------------------------
+// Maximum number of simultaneously tracked DYNAMIC boxes.
+// Limits tracker memory usage and prevents CPU spikes on noisy scenes.
+static constexpr int MAX_TARGETS = 50;
+
+
+//------------------------------------------------------------------------------
+// IoU threshold for matching DYNAMIC boxes between frames.
+static constexpr float TRACK_IOU_TH = 0.25f;
+
+
+//------------------------------------------------------------------------------
+// How many consecutive frames a DYNAMIC box may be missing
+// before its track is dropped.
+static constexpr int TRACK_MAX_MISSED_FRAMES = 3;
+
+
+//------------------------------------------------------------------------------
+// Maximum number of DYNAMIC boxes merged into one cluster.
+static constexpr int MERGE_MAX_BOXES_IN_CLUSTER = 2;
+
+
+//------------------------------------------------------------------------------
+// Minimal IoU at which two DYNAMIC boxes are considered neighbors.
+static constexpr float MERGE_NEIGHBOR_IOU_TH = 0.05f;
+
+
+//------------------------------------------------------------------------------
+// Center-distance factor for merging DYNAMIC boxes with weak overlap.
+static constexpr float MERGE_CENTER_DIST_FACTOR = 5.5f;
+
+
+//------------------------------------------------------------------------------
+// Global transparency for HUD / overlay elements.
+static constexpr float HUD_ALPHA = 0.25f;
+
+
+//------------------------------------------------------------------------------
+// Transparency applied to NON-selected objects when a STATIC box exists.
+static constexpr float UNSELECTED_ALPHA_WHEN_SELECTED = 0.3f;
+
 
 
 // ===================== MERGE DYNAMIC BOXES =====================
@@ -271,30 +279,7 @@ int main(int argc, char *argv[]) {
 
 
 
-    // =====================================================================
-    // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
-    // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
-    // =====================================================================
-    static const int WD_NO_FRAME_TIMEOUT_MS = rtsp_watchdog.no_frame_timeout_ms
-                                              ? rtsp_watchdog.no_frame_timeout_ms : 1500;
-    static const int WD_RESTART_COOLDOWN_MS = rtsp_watchdog.restart_cooldown_ms
-                                              ? rtsp_watchdog.restart_cooldown_ms : 1000;
-    static const int WD_STARTUP_GRACE_MS = rtsp_watchdog.startup_grace_ms ? rtsp_watchdog.startup_grace_ms
-                                                                          : 1500;
-    //------------------------------------------------------------------------------
-    // Pixel difference threshold for motion detection.
-    // Lower values increase sensitivity; higher values suppress noise.
-    static const int DET_DIFF_THRESHOLD = dcfg.diff_threshold ? dcfg.diff_threshold : 20;
-    //------------------------------------------------------------------------------
-// Minimum area (in pixels) for a motion region to become a DYNAMIC box.
-    static const int DET_MIN_AREA = dcfg.min_area ? dcfg.min_area : 10;
-//------------------------------------------------------------------------------
-// Morphological kernel size for cleaning the motion mask.
-    static const int DET_MORPH = dcfg.morph_kernel ? dcfg.morph_kernel : 3;
-//------------------------------------------------------------------------------
-// Downscale factor applied before motion detection.
-// 1.0 = full resolution, < 1.0 = faster but less precise.
-    static const double DET_DOWNSCALE = dcfg.downscale ? dcfg.downscale : 1.0;
+
 
 
     const long long app_start_ms = now_steady_ms();
@@ -321,6 +306,18 @@ int main(int argc, char *argv[]) {
             const long long no_frame_ms = now_ms - g_last_frame_ms.load(std::memory_order_relaxed);
             const long long since_restart = now_ms - last_restart_ms.load(std::memory_order_relaxed);
 
+
+            // =====================================================================
+            // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
+            // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
+            // =====================================================================
+            static const int WD_NO_FRAME_TIMEOUT_MS = rtsp_watchdog.no_frame_timeout_ms
+                                                      ? rtsp_watchdog.no_frame_timeout_ms : 1500;
+            static const int WD_RESTART_COOLDOWN_MS = rtsp_watchdog.restart_cooldown_ms
+                                                      ? rtsp_watchdog.restart_cooldown_ms : 1000;
+            static const int WD_STARTUP_GRACE_MS = rtsp_watchdog.startup_grace_ms ? rtsp_watchdog.startup_grace_ms
+                                                                                  : 1500;
+
             if (since_start > WD_STARTUP_GRACE_MS &&
                 no_frame_ms > WD_NO_FRAME_TIMEOUT_MS &&
                 since_restart > WD_RESTART_COOLDOWN_MS) {
@@ -338,6 +335,22 @@ int main(int argc, char *argv[]) {
         }
         std::cout << "[CTRL] Control thread exit" << std::endl;
     });
+
+
+    //------------------------------------------------------------------------------
+    // Pixel difference threshold for motion detection.
+    // Lower values increase sensitivity; higher values suppress noise.
+    static const int DET_DIFF_THRESHOLD = dcfg.diff_threshold ? dcfg.diff_threshold : 20;
+    //------------------------------------------------------------------------------
+// Minimum area (in pixels) for a motion region to become a DYNAMIC box.
+    static const int DET_MIN_AREA = dcfg.min_area ? dcfg.min_area : 10;
+//------------------------------------------------------------------------------
+// Morphological kernel size for cleaning the motion mask.
+    static const int DET_MORPH = dcfg.morph_kernel ? dcfg.morph_kernel : 3;
+//------------------------------------------------------------------------------
+// Downscale factor applied before motion detection.
+// 1.0 = full resolution, < 1.0 = faster but less precise.
+    static const double DET_DOWNSCALE = dcfg.downscale ? dcfg.downscale : 1.0;
 
 
     MotionDetector detector({       // Pixel difference threshold for motion detection.
@@ -392,7 +405,7 @@ int main(int argc, char *argv[]) {
             dynamic_boxes.clear();
             dynamic_ids.clear();
             for (const auto &t: tracker.targets()) {
-                dynamic_boxes.emplace_back(cv::Rect2f(t.bbox));
+                dynamic_boxes.emplace_back(t.bbox);
                 dynamic_ids.push_back(t.id);
             }
 

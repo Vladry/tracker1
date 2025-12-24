@@ -7,21 +7,29 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <utility>
 
 using namespace std::chrono;
 
-RtspWorker::RtspWorker(FrameStore& store, const RtspConfig& cfg)
-    : store_(store), cfg_(cfg) {}
+// ============================================================================
+// Внутренняя константа реализации rtsp_worker.
+// Инвариант пайплайна: формат кадра после декодера, ожидаемый OpenCV.
+// Не является конфигурацией.
+// ============================================================================
+namespace {
+    constexpr const char* kDecoderCapsForce = "video/x-raw,format=NV12";
+}
+
+RtspWorker::RtspWorker(FrameStore& store, RtspConfig  cfg)
+        : store_(store), cfg_(std::move(cfg)) {}
 
 RtspWorker::~RtspWorker() {
     stop();
 }
 
 void RtspWorker::start() {
-    // Уже запущено — ничего не делаем.
     if (running_.load(std::memory_order_acquire)) return;
 
-    // Сбрасываем флаги на новую "сессию".
     gotFirstSample_.store(false, std::memory_order_release);
     stopRequested_.store(false, std::memory_order_release);
 
@@ -32,25 +40,21 @@ void RtspWorker::start() {
 }
 
 void RtspWorker::stop() {
-    // Если не было запуска — нечего останавливать.
     if (!running_.exchange(false, std::memory_order_acq_rel)) return;
 
     state_.store(State::STOPPING, std::memory_order_release);
     stopRequested_.store(true, std::memory_order_release);
 
-    // Разбудим loop, если он ждёт сообщение на bus.
     pokeBus();
 
     if (th_.joinable()) th_.join();
 
-    // Рабочий поток гарантированно почистил pipeline_ и bus_.
     state_.store(State::STOPPED, std::memory_order_release);
 }
 
 void RtspWorker::restart() {
     stop();
 
-    // Пауза нужна, чтобы камера и сетевой стек успели закрыть сессию/порты.
     if (cfg_.restart_delay_ms > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(cfg_.restart_delay_ms));
     }
@@ -62,7 +66,6 @@ void RtspWorker::pokeBus() {
     std::lock_guard<std::mutex> lk(bus_mu_);
     if (!bus_ || !pipeline_) return;
 
-    // Сообщение "для себя", чтобы gst_bus_timed_pop() проснулся раньше таймаута.
     GstStructure* st = gst_structure_new_empty("app-stop");
     GstMessage* msg = gst_message_new_application(GST_OBJECT(pipeline_), st);
     gst_bus_post(bus_, msg);
@@ -85,15 +88,13 @@ void RtspWorker::threadMain() {
         return;
     }
 
-    // Запускаем пайплайн.
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
 
-    // Ждём перехода в PLAYING ограниченное время.
     {
         GstState cur = GST_STATE_NULL, pending = GST_STATE_NULL;
         GstStateChangeReturn ret = gst_element_get_state(
-            pipeline_, &cur, &pending,
-            (GstClockTime)cfg_.start_timeout_ms * GST_MSECOND
+                pipeline_, &cur, &pending,
+                (GstClockTime)cfg_.start_timeout_ms * GST_MSECOND
         );
 
         if (ret == GST_STATE_CHANGE_FAILURE) {
@@ -106,13 +107,13 @@ void RtspWorker::threadMain() {
             running_.store(false, std::memory_order_release);
             return;
         }
-        // Даже если ASYNC, мы всё равно продолжаем и слушаем bus — но стартовый таймаут уже отработал.
     }
 
     state_.store(State::RUNNING, std::memory_order_release);
 
-    // Основной цикл: ждём сообщения на bus, периодически проверяем stopRequested_.
-    while (running_.load(std::memory_order_acquire) && !stopRequested_.load(std::memory_order_acquire)) {
+    while (running_.load(std::memory_order_acquire) &&
+           !stopRequested_.load(std::memory_order_acquire)) {
+
         GstMessage* msg = gst_bus_timed_pop(bus_, 200 * GST_MSECOND);
         if (!msg) continue;
 
@@ -136,6 +137,7 @@ void RtspWorker::threadMain() {
                 stopRequested_.store(true, std::memory_order_release);
                 break;
             }
+
             case GST_MESSAGE_EOS:
                 if (cfg_.verbose) {
                     std::cerr << "RTSP: EOS" << std::endl;
@@ -145,14 +147,12 @@ void RtspWorker::threadMain() {
                 break;
 
             default:
-                // APPLICATION и прочие — игнорируем.
                 break;
         }
 
         gst_message_unref(msg);
     }
 
-    // Жёсткая остановка: перевод в NULL + уничтожение объектов.
     teardownPipeline();
 
     if (cfg_.verbose) {
@@ -162,10 +162,8 @@ void RtspWorker::threadMain() {
 }
 
 bool RtspWorker::buildPipeline() {
-    teardownPipeline(); // на всякий случай
+    teardownPipeline();
 
-    // Создаём элементы.
-    // rtspsrc даёт динамический src pad -> подключаем в onPadAdded().
     pipeline_   = gst_pipeline_new("rtsp-pipeline");
     src_        = gst_element_factory_make("rtspsrc", "src");
     depay_      = gst_element_factory_make("rtph265depay", "depay");
@@ -182,33 +180,28 @@ bool RtspWorker::buildPipeline() {
         return false;
     }
 
-    // Настраиваем rtspsrc.
     g_object_set(G_OBJECT(src_), "location", cfg_.url.c_str(), nullptr);
     g_object_set(G_OBJECT(src_), "protocols", cfg_.protocols, nullptr);
     g_object_set(G_OBJECT(src_), "latency", cfg_.latency_ms, nullptr);
     g_object_set(G_OBJECT(src_), "timeout", (guint64)cfg_.timeout_us, nullptr);
     g_object_set(G_OBJECT(src_), "tcp-timeout", (guint64)cfg_.tcp_timeout_us, nullptr);
 
-    // capsfilter после декодера.
-    GstCaps* caps = gst_caps_from_string(cfg_.caps_force.c_str());
+    // capsfilter после декодера
+    GstCaps* caps = gst_caps_from_string(kDecoderCapsForce);
     g_object_set(G_OBJECT(force_caps_), "caps", caps, nullptr);
     gst_caps_unref(caps);
 
-    // appsink — минимальная задержка, отдаём только последний кадр.
     g_object_set(G_OBJECT(sink_), "emit-signals", TRUE, nullptr);
     g_object_set(G_OBJECT(sink_), "sync", FALSE, nullptr);
     g_object_set(G_OBJECT(sink_), "max-buffers", 1, nullptr);
     g_object_set(G_OBJECT(sink_), "drop", TRUE, nullptr);
 
-    // Callback на новые кадры.
     GstAppSinkCallbacks cbs{};
     cbs.new_sample = &RtspWorker::onNewSample;
     gst_app_sink_set_callbacks(GST_APP_SINK(sink_), &cbs, this, nullptr);
 
-    // rtspsrc pad-added -> подключение к depay.
     g_signal_connect(src_, "pad-added", G_CALLBACK(&RtspWorker::onPadAdded), this);
 
-    // Добавляем и линкуем статическую часть.
     gst_bin_add_many(GST_BIN(pipeline_), src_, depay_, parse_, dec_, force_caps_, sink_, nullptr);
 
     if (!gst_element_link_many(depay_, parse_, dec_, force_caps_, sink_, nullptr)) {
@@ -219,13 +212,11 @@ bool RtspWorker::buildPipeline() {
         return false;
     }
 
-    // Bus для обработки ошибок.
     bus_ = gst_element_get_bus(pipeline_);
     return true;
 }
 
 void RtspWorker::teardownPipeline() {
-    // Важно: teardown делаем только один раз.
     if (!pipeline_) {
         std::lock_guard<std::mutex> lk(bus_mu_);
         if (bus_) {
@@ -235,17 +226,14 @@ void RtspWorker::teardownPipeline() {
         return;
     }
 
-    // 1) Переводим пайплайн в NULL — это и есть "teardown" RTSP-сессии.
     gst_element_set_state(pipeline_, GST_STATE_NULL);
 
-    // 2) Ждём завершения перехода ограниченное время.
     GstState cur = GST_STATE_NULL, pending = GST_STATE_NULL;
     gst_element_get_state(
-        pipeline_, &cur, &pending,
-        (GstClockTime)cfg_.stop_timeout_ms * GST_MSECOND
+            pipeline_, &cur, &pending,
+            (GstClockTime)cfg_.stop_timeout_ms * GST_MSECOND
     );
 
-    // 3) Освобождаем bus (под мьютексом, т.к. stop() может дернуть pokeBus()).
     {
         std::lock_guard<std::mutex> lk(bus_mu_);
         if (bus_) {
@@ -254,11 +242,9 @@ void RtspWorker::teardownPipeline() {
         }
     }
 
-    // 4) Освобождаем пайплайн и всё дерево элементов (unref pipeline достаточно).
     gst_object_unref(pipeline_);
     pipeline_ = nullptr;
 
-    // Элементы обнулим для ясности.
     src_ = depay_ = parse_ = dec_ = force_caps_ = sink_ = nullptr;
 }
 
@@ -277,7 +263,6 @@ GstFlowReturn RtspWorker::onNewSample(GstAppSink* sink, gpointer user_data) {
         return GST_FLOW_ERROR;
     }
 
-    // Получаем размеры из caps (ожидаем NV12).
     GstStructure* s = gst_caps_get_structure(caps, 0);
     int width = 0, height = 0;
     gst_structure_get_int(s, "width", &width);
@@ -289,8 +274,6 @@ GstFlowReturn RtspWorker::onNewSample(GstAppSink* sink, gpointer user_data) {
         return GST_FLOW_ERROR;
     }
 
-    // NV12: Y plane (H*W) + interleaved UV (H/2*W) => всего H*W*3/2 байт.
-    // OpenCV удобно конвертировать через COLOR_YUV2BGR_NV12.
     cv::Mat yuv(height + height / 2, width, CV_8UC1, (void*)map.data);
     cv::Mat bgr;
     cv::cvtColor(yuv, bgr, cv::COLOR_YUV2BGR_NV12);
@@ -298,7 +281,6 @@ GstFlowReturn RtspWorker::onNewSample(GstAppSink* sink, gpointer user_data) {
     gst_buffer_unmap(buffer, &map);
     gst_sample_unref(sample);
 
-    // Отмечаем первый кадр.
     if (!self->gotFirstSample_.exchange(true, std::memory_order_acq_rel)) {
         if (self->cfg_.verbose) {
             std::cerr << "RTSP: first sample received" << std::endl;
@@ -306,9 +288,7 @@ GstFlowReturn RtspWorker::onNewSample(GstAppSink* sink, gpointer user_data) {
         }
     }
 
-    // Кладём кадр в FrameStore (move, чтобы не копировать лишний раз).
     self->store_.setFrame(std::move(bgr));
-
     return GST_FLOW_OK;
 }
 
@@ -320,11 +300,9 @@ void RtspWorker::onPadAdded(GstElement* src, GstPad* new_pad, gpointer user_data
     if (!caps) caps = gst_pad_query_caps(new_pad, nullptr);
     if (!caps) return;
 
-    // Важно: фильтруем только RTP video.
     GstStructure* str = gst_caps_get_structure(caps, 0);
     const char* name = gst_structure_get_name(str);
 
-    // Ожидаем "application/x-rtp".
     if (!name || std::strcmp(name, "application/x-rtp") != 0) {
         gst_caps_unref(caps);
         return;
