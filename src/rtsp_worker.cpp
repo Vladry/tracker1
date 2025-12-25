@@ -20,8 +20,10 @@ namespace {
     constexpr const char* kDecoderCapsForce = "video/x-raw,format=NV12";
 }
 
-RtspWorker::RtspWorker(FrameStore& store, RtspConfig  cfg)
-        : store_(store), cfg_(std::move(cfg)) {}
+RtspWorker::RtspWorker(FrameStore& store, toml::table& tbl)
+        : store_(store) {
+        load_rtsp_config(tbl);
+}
 
 RtspWorker::~RtspWorker() {
     stop();
@@ -325,3 +327,30 @@ void RtspWorker::onPadAdded(GstElement* src, GstPad* new_pad, gpointer user_data
     gst_object_unref(sinkpad);
     gst_caps_unref(caps);
 }
+
+bool RtspWorker::load_rtsp_config(toml::table &tbl) {
+    // ----------------------------- [rtsp] -----------------------------
+    try {
+        const auto *rtsp_node = tbl.get("rtsp");
+        if (!rtsp_node) {
+            throw std::runtime_error("missing [rtsp] table");
+        }
+        const auto *rtsp = rtsp_node->as_table();
+        if (!rtsp) {
+            throw std::runtime_error("invalid [rtsp] table");
+        }
+        cfg_.url = read_required<std::string>(*rtsp, "url");
+        cfg_.protocols = read_required<int>(*rtsp, "protocols");
+        cfg_.latency_ms = read_required<int>(*rtsp, "latency_ms");
+        cfg_.timeout_us = read_required<std::uint64_t>(*rtsp, "timeout_us");
+        cfg_.tcp_timeout_us = read_required<std::uint64_t>(*rtsp, "tcp_timeout_us");
+        cfg_.verbose = read_required<bool>(*rtsp, "verbose");
+
+
+        return true;
+
+    } catch (const std::exception &e) {
+        std::cerr << "rtsp config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};

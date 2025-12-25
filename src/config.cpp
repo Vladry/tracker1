@@ -13,32 +13,7 @@
 //  - В случае ошибки оставляем дефолты из AppConfig и возвращаем false.
 //  - Все имена ключей должны соответствовать config.toml.
 // ============================================================================
-bool load_rtsp_config(toml::table &tbl, RtspConfig &rcfg) {
-    // ----------------------------- [rtsp] -----------------------------
-    try {
-        const auto *rtsp_node = tbl.get("rtsp");
-        if (!rtsp_node) {
-            throw std::runtime_error("missing [rtsp] table");
-        }
-        const auto *rtsp = rtsp_node->as_table();
-        if (!rtsp) {
-            throw std::runtime_error("invalid [rtsp] table");
-        }
-        rcfg.url = read_required<std::string>(*rtsp, "url");
-        rcfg.protocols = read_required<int>(*rtsp, "protocols");
-        rcfg.latency_ms = read_required<int>(*rtsp, "latency_ms");
-        rcfg.timeout_us = read_required<std::uint64_t>(*rtsp, "timeout_us");
-        rcfg.tcp_timeout_us = read_required<std::uint64_t>(*rtsp, "tcp_timeout_us");
-        rcfg.verbose = read_required<bool>(*rtsp, "verbose");
 
-
-        return true;
-
-    } catch (const std::exception &e) {
-        std::cerr << "rtsp config load failed  " << e.what() << std::endl;
-        return false;
-    }
-};
 
 bool load_rtsp_watchdog(toml::table &tbl, RtspWatchDog &rtsp_wd) {
     // ----------------------- [rtsp.watchdog] -----------------------

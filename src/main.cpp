@@ -264,18 +264,15 @@ int main(int argc, char *argv[]) {
     FrameStore ui_store;
 
     // создаём объекты конфигураций
-    RtspConfig rcfg;
     RtspWatchDog rtsp_watchdog;
 
     // получаем конфигурации из config.toml
     toml::table tbl = toml::parse_file("config.toml");
-    load_rtsp_config(tbl, rcfg);
+    RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
     MotionDetector detector(tbl);
     TrackerManager tracker(tbl);
     OverlayRenderer overlay(tbl);
-
-    RtspWorker rtsp(raw_store, rcfg);
     rtsp.start();
 
 
