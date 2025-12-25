@@ -2,7 +2,6 @@
 
 #include <string>
 #include <cstdint>
-#include "rtsp_watch_dog.h"
 #include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
 
 
@@ -52,5 +51,5 @@ struct OverlayConfig {
 
 
 
-bool load_merge_config(const toml::table& tbl, RtspWatchDog& cfg);
+//bool load_merge_config(const toml::table& tbl, RtspWatchDog& cfg);
 
