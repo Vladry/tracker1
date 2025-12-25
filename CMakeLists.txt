@@ -26,6 +26,7 @@ target_sources(Five_Threads PRIVATE
         src/offset_calculator.cpp
         src/overlay.cpp
         src/rtsp_worker.cpp
+        src/rtsp_watchdog.cpp
         src/StaticBoxManager.cpp
         src/tracker_manager.cpp
 )

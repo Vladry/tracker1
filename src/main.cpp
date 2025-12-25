@@ -17,6 +17,7 @@
 #include "display_loop.h"
 #include "other_handlers.h"
 #include "detector.h"
+#include "rtsp_watchdog.h"
 
 #define SHOW_IDS = false;
 
@@ -263,13 +264,11 @@ int main(int argc, char *argv[]) {
     FrameStore raw_store;
     FrameStore ui_store;
 
-    // создаём объекты конфигураций
-    RtspWatchDog rtsp_watchdog;
-
     // получаем конфигурации из config.toml
     toml::table tbl = toml::parse_file("config.toml");
     RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
+    RstpWatchDog watch_dog(tbl);
     MotionDetector detector(tbl);
     TrackerManager tracker(tbl);
     OverlayRenderer overlay(tbl);
@@ -298,36 +297,39 @@ int main(int argc, char *argv[]) {
                 g_last_frame_ms.store(now_steady_ms(), std::memory_order_relaxed);
             }
 
-            // Watchdog: если давно нет кадров — перезапускаем RTSP
-            const long long now_ms = now_steady_ms();
-            const long long since_start = now_ms - app_start_ms;
-            const long long no_frame_ms = now_ms - g_last_frame_ms.load(std::memory_order_relaxed);
-            const long long since_restart = now_ms - last_restart_ms.load(std::memory_order_relaxed);
+            auto rtsp_watchdog_tick = [&](){
+                // Watchdog: если давно нет кадров — перезапускаем RTSP
+                const long long now_ms = now_steady_ms();
+                const long long since_start = now_ms - app_start_ms;
+                const long long no_frame_ms = now_ms - g_last_frame_ms.load(std::memory_order_relaxed);
+                const long long since_restart = now_ms - last_restart_ms.load(std::memory_order_relaxed);
 
 
-            // =====================================================================
-            // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
-            // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
-            // =====================================================================
-            static const int WD_NO_FRAME_TIMEOUT_MS = rtsp_watchdog.no_frame_timeout_ms
-                                                      ? rtsp_watchdog.no_frame_timeout_ms : 1500;
-            static const int WD_RESTART_COOLDOWN_MS = rtsp_watchdog.restart_cooldown_ms
-                                                      ? rtsp_watchdog.restart_cooldown_ms : 1000;
-            static const int WD_STARTUP_GRACE_MS = rtsp_watchdog.startup_grace_ms ? rtsp_watchdog.startup_grace_ms
-                                                                                  : 1500;
+                // =====================================================================
+                // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
+                // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
+                // =====================================================================
+                static const int WD_NO_FRAME_TIMEOUT_MS = rtsp_watchdog.no_frame_timeout_ms
+                                                          ? rtsp_watchdog.no_frame_timeout_ms : 1500;
+                static const int WD_RESTART_COOLDOWN_MS = rtsp_watchdog.restart_cooldown_ms
+                                                          ? rtsp_watchdog.restart_cooldown_ms : 1000;
+                static const int WD_STARTUP_GRACE_MS = rtsp_watchdog.startup_grace_ms ? rtsp_watchdog.startup_grace_ms
+                                                                                      : 1500;
 
-            if (since_start > WD_STARTUP_GRACE_MS &&
-                no_frame_ms > WD_NO_FRAME_TIMEOUT_MS &&
-                since_restart > WD_RESTART_COOLDOWN_MS) {
+                if (since_start > WD_STARTUP_GRACE_MS &&
+                    no_frame_ms > WD_NO_FRAME_TIMEOUT_MS &&
+                    since_restart > WD_RESTART_COOLDOWN_MS) {
 
-                std::cout << "[WATCHDOG] No frames for " << no_frame_ms
-                          << " ms -> restarting RTSP" << std::endl;
+                    std::cout << "[WATCHDOG] No frames for " << no_frame_ms
+                              << " ms -> restarting RTSP" << std::endl;
 
-                rtsp.stop();
-                rtsp.start();
-                last_restart_ms.store(now_ms, std::memory_order_relaxed);
-                g_last_frame_ms.store(now_ms, std::memory_order_relaxed);
-            }
+                    rtsp.stop();
+                    rtsp.start();
+                    last_restart_ms.store(now_ms, std::memory_order_relaxed);
+                    g_last_frame_ms.store(now_ms, std::memory_order_relaxed);
+                }
+            };
+            rtsp_watchdog_tick();
 
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }

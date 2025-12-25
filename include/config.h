@@ -24,18 +24,7 @@ static T read_required(const toml::table &tbl, std::string_view key) {
 // ============================================================================
 
 
-struct RtspWatchDog {
-    // ------------------------- [rtsp.watchdog] -------------------------
-    // Таймаут отсутствия кадров (мс)
-    std::uint64_t no_frame_timeout_ms = 1500;
 
-    // Минимальный интервал между рестартами (мс)
-    std::uint64_t restart_cooldown_ms = 1000;
-
-    // Льготный период после старта (мс)
-    std::uint64_t startup_grace_ms = 3000;
-
-};
 
 // ============================================================================
 // Detector configuration
@@ -83,6 +72,6 @@ struct OverlayConfig {
 // ============================================================================
 
 
-bool load_rtsp_watchdog (toml::table &tbl, RtspWatchDog& rtsp_wd);
-bool load_merge_config(const toml::table& tbl, MergeConfig& cfg);
+
+bool load_merge_config(const toml::table& tbl);
 
