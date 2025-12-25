@@ -1,4 +1,3 @@
-#pragma once
 #include "detector.h"
 
 MotionDetector::MotionDetector(const toml::table& tbl) {

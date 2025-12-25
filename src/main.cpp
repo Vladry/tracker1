@@ -336,17 +336,8 @@ int main(int argc, char *argv[]) {
         std::cout << "[CTRL] Control thread exit" << std::endl;
     });
 
+    StaticBoxManager static_mgr(tbl);
 
-
-    static_box_manager static_mgr({
-                                          STATIC_AUTO_REBIND_ON_LOSS,
-                                          STATIC_REBIND_TIMEOUT_MS,
-                                          STATIC_PARENT_IOU_TH,
-                                          STATIC_REATTACH_SCORE_TH
-                                  });
-
-
-//    static_mgr();// TODO - Посмотреть как реализовано в старых рабочих коммитах
 
     std::vector<cv::Rect2f> dynamic_boxes;
     std::vector<int> dynamic_ids;

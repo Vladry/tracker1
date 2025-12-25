@@ -47,9 +47,6 @@ public:
 private:
     struct StaticBoxConfig {
         bool auto_rebind_on_loss;
-        int rebind_timeout_ms;
-        float parent_iou_th;
-        float reattach_score_th;
 // ============================================================================
 // Static rebind configuration
 // ============================================================================

@@ -142,9 +142,3 @@ bool StaticBoxManager::load_static_rebind_config(const toml::table &tbl) {
     }
 };
 
-void StaticBoxManager::static_mgr(){};// TODO - реализовать!
-    /*    работает с константами:
-    bool auto_rebind_on_loss,
-    int rebind_timeout_ms,
-    float parent_iou_th,
-    float reattach_score_th*/
