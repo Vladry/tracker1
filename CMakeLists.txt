@@ -9,7 +9,8 @@ pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
 
 find_package(OpenCV REQUIRED)
 
-add_executable(Five_Threads)
+add_executable(Five_Threads
+        include/rtsp_watch_dog.h)
 
 configure_file(
         ${CMAKE_SOURCE_DIR}/config.toml
@@ -26,7 +27,7 @@ target_sources(Five_Threads PRIVATE
         src/offset_calculator.cpp
         src/overlay.cpp
         src/rtsp_worker.cpp
-#        src/rtsp_watchdog.cpp
+        src/rtsp_watch_dog.cpp
         src/static_box_manager.cpp
         src/tracker_manager.cpp
 )

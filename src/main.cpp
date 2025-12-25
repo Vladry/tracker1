@@ -1,6 +1,6 @@
 #include <gst/gst.h>
 #include <opencv2/opencv.hpp>
-#include "config.h"
+//#include "config.h"
 #include <chrono>
 #include <iostream>
 #include <vector>
@@ -17,6 +17,7 @@
 #include "display_loop.h"
 #include "other_handlers.h"
 #include "detector.h"
+#include "rtsp_watch_dog.h"
 
 #define SHOW_IDS = false;
 
