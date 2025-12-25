@@ -17,7 +17,6 @@
 #include "display_loop.h"
 #include "other_handlers.h"
 #include "detector.h"
-#include "rtsp_watchdog.h"
 
 #define SHOW_IDS = false;
 
@@ -263,12 +262,13 @@ int main(int argc, char *argv[]) {
 
     FrameStore raw_store;
     FrameStore ui_store;
+    RtspWatchDog rtsp_watchdog;
+
 
     // получаем конфигурации из config.toml
     toml::table tbl = toml::parse_file("config.toml");
     RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
-    RstpWatchDog watch_dog(tbl);
     MotionDetector detector(tbl);
     TrackerManager tracker(tbl);
     OverlayRenderer overlay(tbl);
@@ -337,7 +337,7 @@ int main(int argc, char *argv[]) {
     });
 
 
-    StaticBoxManager::static_mgr();// TODO - Посмотреть как реализовано в старых рабочих коммитах
+    static_mgr();// TODO - Посмотреть как реализовано в старых рабочих коммитах
 
     std::vector<cv::Rect2f> dynamic_boxes;
     std::vector<int> dynamic_ids;

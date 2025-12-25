@@ -19,21 +19,19 @@ static T read_required(const toml::table &tbl, std::string_view key) {
 }
 
 
-// ============================================================================
-// RTSP / GStreamer configuration
-// ============================================================================
+struct RtspWatchDog {
+    // ------------------------- [rtsp.watchdog] -------------------------
+    // Таймаут отсутствия кадров (мс)
+    std::uint64_t no_frame_timeout_ms = 1500;
 
+    // Минимальный интервал между рестартами (мс)
+    std::uint64_t restart_cooldown_ms = 1000;
 
+    // Льготный период после старта (мс)
+    std::uint64_t startup_grace_ms = 3000;
 
+};
 
-// ============================================================================
-// Detector configuration
-// ============================================================================
-
-
-// ============================================================================
-// Merge configuration
-// ============================================================================
 struct MergeConfig {
     // Максимум bbox в кластере
     int max_boxes_in_cluster = 2;
@@ -48,12 +46,6 @@ struct MergeConfig {
     float max_area_multiplier = 3.0f;
 };
 
-
-
-
-// ============================================================================
-// Overlay + Smoothing configuration
-// ============================================================================
 
 struct OverlayConfig {
     // Прозрачность HUD
@@ -73,5 +65,5 @@ struct OverlayConfig {
 
 
 
-bool load_merge_config(const toml::table& tbl);
-
+bool load_merge_config(const toml::table& tbl, RtspWatchDog& cfg);
+bool load_rtsp_watchdog (toml::table &tbl, RtspWatchDog& rtsp_wd);
