@@ -48,7 +48,6 @@ bool load_rtsp_watchdog(toml::table &tbl, RtspWatchDog &rtsp_wd) {
     }
 
 };
-
 bool load_merge_config(const toml::table &tbl, MergeConfig &mcfg) {
 // ----------------------------- [merge] ----------------------------
     try {
@@ -69,28 +68,5 @@ bool load_merge_config(const toml::table &tbl, MergeConfig &mcfg) {
 };
 
 
-bool load_static_rebind_config(const toml::table &tbl, StaticRebindConfig &srCfg) {
-// ------------------------- [static_rebind] ------------------------
-    try {
-        const auto *static_rebind = tbl["static_rebind"].as_table();
-        if (!static_rebind) {
-            throw std::runtime_error("missing [static_rebind] table");
-        }
-        srCfg.auto_rebind = read_required<bool>(*static_rebind, "auto_rebind");
-        srCfg.rebind_timeout_ms = read_required<int>(*static_rebind, "rebind_timeout_ms");
-        srCfg.distance_weight = read_required<float>(*static_rebind, "distance_weight");
-        srCfg.area_weight = read_required<float>(*static_rebind, "area_weight");
-        srCfg.larger_area_factor = read_required<float>(*static_rebind, "larger_area_factor");
-        srCfg.max_large_target_dist_frac = read_required<float>(
-                *static_rebind, "max_large_target_dist_frac");
-        srCfg.parent_iou_th = read_required<float>(*static_rebind, "parent_iou_th");
-        srCfg.reattach_score_th = read_required<float>(*static_rebind, "reattach_score_th");
-        return true;
-
-    } catch (const std::exception &e) {
-        std::cerr << "static_rebind config load failed  " << e.what() << std::endl;
-        return false;
-    }
-};
 
 

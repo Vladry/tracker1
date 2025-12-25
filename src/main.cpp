@@ -63,7 +63,7 @@ static constexpr float STATIC_REATTACH_SCORE_TH = 0.20f;
 
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
-static static_box_manager *g_static_mgr = nullptr;
+static StaticBoxManager *g_static_mgr = nullptr;
 static std::vector<cv::Rect2f> *g_dynamic_boxes = nullptr;
 static std::vector<int> *g_dynamic_ids = nullptr;
 
@@ -335,12 +335,8 @@ int main(int argc, char *argv[]) {
     });
 
 
-    static_box_manager static_mgr({
-                                          STATIC_AUTO_REBIND_ON_LOSS,
-                                          STATIC_REBIND_TIMEOUT_MS,
-                                          STATIC_PARENT_IOU_TH,
-                                          STATIC_REATTACH_SCORE_TH
-                                  });
+    StaticBoxManager::static_mgr();// TODO - Посмотреть как реализовано в старых рабочих коммитах
+
     std::vector<cv::Rect2f> dynamic_boxes;
     std::vector<int> dynamic_ids;
 

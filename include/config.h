@@ -60,35 +60,7 @@ struct MergeConfig {
 };
 
 
-// ============================================================================
-// Static rebind configuration
-// ============================================================================
 
-struct StaticRebindConfig {
-    // Автоматическая перепривязка static bbox
-    bool auto_rebind = true;
-
-    // Таймаут ожидания новой цели (мс)
-    int rebind_timeout_ms = 1200;
-
-    // Вес расстояния
-    float distance_weight = 1.0f;
-
-    // Вес площади
-    float area_weight = 1.0f;
-
-    // Во сколько раз новая цель должна быть крупнее
-    float larger_area_factor = 2.0f;
-
-    // Максимальная допустимая дистанция до крупной цели
-    float max_large_target_dist_frac = 0.2f;
-
-    // IoU-порог родительской привязки
-    float parent_iou_th = 0.15f;
-
-    // Порог уверенности перепривязки
-    float reattach_score_th = 0.20f;
-};
 
 // ============================================================================
 // Overlay + Smoothing configuration
@@ -113,5 +85,4 @@ struct OverlayConfig {
 
 bool load_rtsp_watchdog (toml::table &tbl, RtspWatchDog& rtsp_wd);
 bool load_merge_config(const toml::table& tbl, MergeConfig& cfg);
-bool load_static_rebind_config(const toml::table& tbl, StaticRebindConfig& cfg);
 
