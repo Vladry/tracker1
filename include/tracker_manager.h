@@ -4,16 +4,9 @@
 #include <vector>
 #include "target.h"
 #include "config.h"
-//#include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО внизу. forward-decl НЕЛЬЗЯ
 
-// IoU-based tracker WITHOUT Kalman filter.
-// - Tracks are updated purely by assignment to detections (IoU >= threshold).
-// - If not matched, track is kept for max_missed_frames and then removed.
 class TrackerManager {
 private:
-    // ============================================================================
-// Tracker configuration
-// ============================================================================
     struct TrackerConfig {
         // IoU для сопоставления
         float iou_threshold = 0.25f;
@@ -44,13 +37,10 @@ public:
 
     void reset();
 
-    // Update with detections; returns current targets
     std::vector<Target> update(const std::vector<cv::Rect2f> &detections);
 
-    // Choose target by click point; returns selected ID if hit, else -1
     int pickTargetId(int x, int y) const;
 
-    // Presence check (used to drop selection when track disappears)
     bool hasTargetId(int id) const;
 
     const std::vector<Target> &targets() const { return targets_; }

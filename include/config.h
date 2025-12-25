@@ -18,19 +18,6 @@ static T read_required(const toml::table &tbl, std::string_view key) {
     return *value;
 }
 
-struct MergeConfig {
-    // Максимум bbox в кластере
-    int max_boxes_in_cluster = 2;
-
-    // IoU соседства
-    float neighbor_iou_th = 0.05f;
-
-    // Коэффициент расстояния между центрами
-    float center_dist_factor = 5.5f;
-
-    // Максимальный рост площади merged bbox
-    float max_area_multiplier = 3.0f;
-};
 
 
 struct OverlayConfig {
@@ -45,11 +32,6 @@ struct OverlayConfig {
 };
 
 
-// ============================================================================
-// Loader API (реализовано в config.cpp)
-// ============================================================================
 
 
-
-//bool load_merge_config(const toml::table& tbl, RtspWatchDog& cfg);
 
