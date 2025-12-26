@@ -14,6 +14,7 @@ bool MotionDetector::load_detector_config(const toml::table& tbl) {
             throw std::runtime_error("missing [detector] table");
         }
         cfg_.diff_threshold = read_required<int>(*detector, "diff_threshold");
+        cfg_.chroma_threshold = read_required<int>(*detector, "chroma_threshold");
         cfg_.min_area = read_required<int>(*detector, "min_area");
         cfg_.sensitivity = read_required<double>(*detector, "sensitivity");
         cfg_.morph_kernel = read_required<int>(*detector, "morph_kernel");
@@ -39,23 +40,34 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
         frame = small;
     }
 
-    cv::Mat gray;
-    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+    cv::Mat ycrcb;
+    cv::cvtColor(frame, ycrcb, cv::COLOR_BGR2YCrCb);
 
-    if (prev_gray_.empty()) {
-        prev_gray_ = gray;
+    if (prev_ycrcb_.empty()) {
+        prev_ycrcb_ = ycrcb;
         return out;
     }
 
     cv::Mat diff;
-    cv::absdiff(gray, prev_gray_, diff);
-    prev_gray_ = gray;
+    cv::absdiff(ycrcb, prev_ycrcb_, diff);
+    prev_ycrcb_ = ycrcb;
 
     cv::Mat thr;
     const double sensitivity = cfg_.sensitivity > 0.0 ? cfg_.sensitivity : 1.0;
-    const int diff_threshold = std::max(1, static_cast<int>(std::lround(cfg_.diff_threshold * sensitivity)));
+    const int diff_threshold = std::max(0, static_cast<int>(std::lround(cfg_.diff_threshold * sensitivity)));
+    const int chroma_threshold = std::max(1, static_cast<int>(std::lround(cfg_.chroma_threshold * sensitivity)));
     const int min_area = std::max(1, static_cast<int>(std::lround(cfg_.min_area * sensitivity)));
-    cv::threshold(diff, thr, diff_threshold, 255, cv::THRESH_BINARY);
+    cv::Mat diff_channels[3];
+    cv::split(diff, diff_channels);
+    cv::Mat chroma_diff;
+    cv::max(diff_channels[1], diff_channels[2], chroma_diff);
+    cv::threshold(chroma_diff, thr, chroma_threshold, 255, cv::THRESH_BINARY);
+
+    if (diff_threshold > 0) {
+        cv::Mat luma_thr;
+        cv::threshold(diff_channels[0], luma_thr, diff_threshold, 255, cv::THRESH_BINARY);
+        cv::bitwise_or(thr, luma_thr, thr);
+    }
 
     if (cfg_.morph_kernel > 0) {
         cv::Mat k = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(cfg_.morph_kernel, cfg_.morph_kernel));

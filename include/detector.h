@@ -6,11 +6,19 @@
 class MotionDetector {
 private:
     struct DetectorConfig {
-        // Минимальная разница яркости
+        // Минимальная разница яркости (0 = отключить яркостной анализ)
         int diff_threshold = 20;
+
+        // Минимальная разница цветности (Cb/Cr) между кадрами
+        int chroma_threshold = 10;
+
 
         // Минимальная площадь bbox
         int min_area = 10;
+
+        // Коэффициент чувствительности детектора
+        double sensitivity = 1.0;
+
 
         // Коэффициент чувствительности детектора
         double sensitivity = 1.0;
@@ -31,7 +39,7 @@ public:
 
 private:
     DetectorConfig cfg_;
-    cv::Mat prev_gray_;
+    cv::Mat prev_ycrcb_;
 
     bool load_detector_config(const toml::table& tbl);
 };
