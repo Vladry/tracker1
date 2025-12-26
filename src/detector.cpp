@@ -1,4 +1,6 @@
 #include "detector.h"
+#include <algorithm>
+#include <cmath>
 
 MotionDetector::MotionDetector(const toml::table& tbl) {
     load_detector_config(tbl);
@@ -13,6 +15,7 @@ bool MotionDetector::load_detector_config(const toml::table& tbl) {
         }
         cfg_.diff_threshold = read_required<int>(*detector, "diff_threshold");
         cfg_.min_area = read_required<int>(*detector, "min_area");
+        cfg_.sensitivity = read_required<double>(*detector, "sensitivity");
         cfg_.morph_kernel = read_required<int>(*detector, "morph_kernel");
         cfg_.downscale = read_required<double>(*detector, "downscale");
         return true;
@@ -49,7 +52,10 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
     prev_gray_ = gray;
 
     cv::Mat thr;
-    cv::threshold(diff, thr, cfg_.diff_threshold, 255, cv::THRESH_BINARY);
+    const double sensitivity = cfg_.sensitivity > 0.0 ? cfg_.sensitivity : 1.0;
+    const int diff_threshold = std::max(1, static_cast<int>(std::lround(cfg_.diff_threshold * sensitivity)));
+    const int min_area = std::max(1, static_cast<int>(std::lround(cfg_.min_area * sensitivity)));
+    cv::threshold(diff, thr, diff_threshold, 255, cv::THRESH_BINARY);
 
     if (cfg_.morph_kernel > 0) {
         cv::Mat k = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(cfg_.morph_kernel, cfg_.morph_kernel));
@@ -62,7 +68,7 @@ std::vector<cv::Rect2f> MotionDetector::detect(const cv::Mat& frame_bgr) {
 
     for (auto& c : contours) {
         double area = cv::contourArea(c);
-        if (area < cfg_.min_area) continue;
+        if (area < min_area) continue;
         cv::Rect r = cv::boundingRect(c);
 
         cv::Rect2f rf((float)r.x, (float)r.y, (float)r.width, (float)r.height);

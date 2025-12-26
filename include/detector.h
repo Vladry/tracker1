@@ -12,6 +12,10 @@ private:
         // Минимальная площадь bbox
         int min_area = 10;
 
+        // Коэффициент чувствительности детектора
+        double sensitivity = 1.0;
+
+
         // Размер морфологического ядра
         int morph_kernel = 3;
 
