@@ -138,8 +138,10 @@ int StaticBoxManager::find_nearest_with_direction(
 ) const {
     constexpr float kNearbyDistanceEpsilon = 10.0f;
     int best = -1;
+    int best_dir = -1;
     float best_dist = std::numeric_limits<float>::max();
     float best_dir_score = -1.0f;
+    float best_dir_score_qualified = -1.0f;
 
     for (size_t i = 0; i < boxes.size(); ++i) {
         float d = center_dist(sb.rect, boxes[i]);
@@ -164,17 +166,30 @@ int StaticBoxManager::find_nearest_with_direction(
 
         if (d + kNearbyDistanceEpsilon < best_dist) {
             best_dist = d;
-            best_dir_score = dir_score;
             best = static_cast<int>(i);
+            best_dir_score = dir_score;
+            best_dir = -1;
+            best_dir_score_qualified = -1.0f;
+            if (dir_score >= kDirectionSimilarityThreshold) {
+                best_dir = static_cast<int>(i);
+                best_dir_score_qualified = dir_score;
+            }
             continue;
         }
 
-        if (std::abs(d - best_dist) <= kNearbyDistanceEpsilon && dir_score > best_dir_score) {
-            best_dir_score = dir_score;
-            best = static_cast<int>(i);
+        if (std::abs(d - best_dist) <= kNearbyDistanceEpsilon) {
+            if (dir_score > best_dir_score) {
+                best_dir_score = dir_score;
+            }
+            if (dir_score >= kDirectionSimilarityThreshold) {
+                if (best_dir == -1 || dir_score > best_dir_score_qualified) {
+                    best_dir = static_cast<int>(i);
+                    best_dir_score_qualified = dir_score;
+                }
+            }
         }
     }
-    return best;
+    return (best_dir >= 0) ? best_dir : best;
 }
 
 

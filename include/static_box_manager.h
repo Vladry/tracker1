@@ -52,6 +52,7 @@ private:
     static constexpr int static_boxes_max_amount = 1;
 
     static constexpr size_t kTrajectoryHistorySize = 8;
+    static constexpr float kDirectionSimilarityThreshold = 0.5f;
 
     struct StaticBoxConfig {
 // ============================================================================
