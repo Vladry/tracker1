@@ -7,22 +7,17 @@ class MotionDetector {
 private:
     struct DetectorConfig {
         // Минимальная разница яркости (0 = отключить яркостной анализ)
-        int diff_threshold = 20;
+        int diff_threshold = 0;
 
         // Минимальная разница цветности (Cb/Cr) между кадрами
         int chroma_threshold = 10;
 
 
         // Минимальная площадь bbox
-        int min_area = 10;
+        int min_area = 20;
 
         // Коэффициент чувствительности детектора
         double sensitivity = 1.0;
-
-
-        // Коэффициент чувствительности детектора
-        double sensitivity = 1.0;
-
 
         // Размер морфологического ядра
         int morph_kernel = 3;
