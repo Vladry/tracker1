@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 
+
 TrackerManager::TrackerManager(const toml::table& tbl) {
     load_tracker_config(tbl);
 }
@@ -93,9 +94,8 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
     }
 
     tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
-        [&](const Track& t){ return t.missed > cfg_.max_missed_frames; }),
-        tracks_.end());
-
+                                 [&](const Track& t){ return t.missed > cfg_.max_missed_frames; }),
+                  tracks_.end());
 
     if (cfg_.leading_only && !tracks_.empty()) {
         cv::Point2f dir_sum(0.0f, 0.0f);
@@ -142,28 +142,53 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
                     break;
                 }
             }
-            if (leading_found) {
-                tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
-                                             [&](const Track& t){ return t.id != leading_id_; }),
-                              tracks_.end());
-            } else {
+            if (!leading_found) {
                 leading_id_ = -1;
+            }
+        }
+
+        if (leading_id_ < 0) {
+            int best_index = -1;
+            float best_area = -1.0f;
+            for (size_t i = 0; i < tracks_.size(); ++i) {
+                if (tracks_[i].missed > 0) continue;
+                float area = tracks_[i].bbox.area();
+                if (area > best_area) {
+                    best_area = area;
+                    best_index = static_cast<int>(i);
+                }
+            }
+            if (best_index >= 0) {
+                leading_id_ = tracks_[static_cast<size_t>(best_index)].id;
             }
         }
     }
 
-
-
     targets_.clear();
-    targets_.reserve(tracks_.size());
-    for (const auto& tr : tracks_) {
-        Target tg;
-        tg.id = tr.id;
-        tg.target_name = "T" + std::to_string(tr.id);
-        tg.bbox = tr.bbox;
-        tg.age_frames = tr.age;
-        tg.missed_frames = tr.missed;
-        targets_.push_back(std::move(tg));
+    if (cfg_.leading_only && leading_id_ >= 0) {
+        targets_.reserve(1);
+        for (const auto& tr : tracks_) {
+            if (tr.id != leading_id_) continue;
+            Target tg;
+            tg.id = tr.id;
+            tg.target_name = "T" + std::to_string(tr.id);
+            tg.bbox = tr.bbox;
+            tg.age_frames = tr.age;
+            tg.missed_frames = tr.missed;
+            targets_.push_back(std::move(tg));
+            break;
+        }
+    } else {
+        targets_.reserve(tracks_.size());
+        for (const auto& tr : tracks_) {
+            Target tg;
+            tg.id = tr.id;
+            tg.target_name = "T" + std::to_string(tr.id);
+            tg.bbox = tr.bbox;
+            tg.age_frames = tr.age;
+            tg.missed_frames = tr.missed;
+            targets_.push_back(std::move(tg));
+        }
     }
     return targets_;
 }

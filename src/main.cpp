@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
     toml::table tbl = toml::parse_file("config.toml");
     RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
-    MotionDetector detector(tbl);
+    Detector detector(tbl);
     TrackerManager tracker(tbl);
     MergeBbox merge_bbox(tbl);
     OverlayRenderer overlay(tbl);
