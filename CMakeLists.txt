@@ -9,10 +9,7 @@ pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
 
 find_package(OpenCV REQUIRED)
 
-add_executable(Five_Threads
-        include/rtsp_watch_dog.h
-        include/merge_bbox.h
-        src/merge_bbox.cpp)
+add_executable(Five_Threads)
 
 configure_file(
         ${CMAKE_SOURCE_DIR}/config.toml
@@ -21,7 +18,6 @@ configure_file(
 )
 
 target_sources(Five_Threads PRIVATE
-        src/config.cpp
         src/detector.cpp
         src/display_loop.cpp
         src/frame_store.cpp
