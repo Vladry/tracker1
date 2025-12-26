@@ -30,7 +30,7 @@ timeout_us = 2000000
 tcp_timeout_us = 2000000
 
 # Включить подробные логи нашего RTSP-воркера (std::cout / std::cerr).
-verbose = true
+verbose = false
 
 [rtsp.watchdog]
 # -------------------------
@@ -40,22 +40,22 @@ verbose = true
 # watchdog инициирует rtsp.restart() в control-потоке.
 
 # Таймаут отсутствия кадров (мс). После этого считаем, что поток "завис".
-no_frame_timeout_ms = 2500
+no_frame_timeout_ms = 1500
 
 # Минимальная пауза между рестартами (мс), защита от "дребезга".
-restart_cooldown_ms = 2000
+restart_cooldown_ms = 1000
 
 # Стартовая "льгота" (мс) после запуска приложения:
 # пока пайплайн/камера инициализируются, не считаем отсутствие кадров ошибкой.
-startup_grace_ms = 8000
+startup_grace_ms = 3000
 
 [detector]
-# Минимальная разница яркости между кадрами,
+# Минимальная разница между кадрами,
 # при которой пиксель считается движущимся.
 diff_threshold = 15
 
 # Минимальная площадь bbox, чтобы он считался валидной детекцией.
-min_area = 50
+min_area = 30
 
 # Размер морфологического ядра для очистки бинарной маски.
 morph_kernel = 5
@@ -67,32 +67,32 @@ downscale = 1.0
 [merge]
 # Максимальное количество dynamic bbox,
 # объединяемых в одну merged-цель.
-max_boxes_in_cluster = 3
+max_boxes_in_cluster = 1
 
 # Минимальный IoU (Intersection over Union),
 # при котором два bbox считаются соседними.
-neighbor_iou_th = 0.05
+neighbor_iou_th = 0.5
 
 # Коэффициент расстояния между центрами bbox,
 # используемый как эвристика объединения.
-center_dist_factor = 5.5
+center_dist_factor = 2.5
 
 # Максимальная кратность площади merged-bbox
 # относительно площади САМОГО КРУПНОГО bbox в кластере.
-max_area_multiplier = 3.0
+max_area_multiplier = 1.0
 
 
 [tracker]
 # Максимально допустимое количество пропущенных кадров
 # до потери цели.
-max_missed_frames = 3
+max_missed_frames = 15
 
 
 # Максимальное количество динамических целей (ограничение трекера).
 # Защита от \"взрыва\" количества треков на шумных сценах.
 max_targets = 50
 # Минимальный IoU для сопоставления bbox между кадрами.
-iou_th = 0.25
+iou_th = 0.15 #бОльшее значение рисует для каждой цели шлейф из боксов
 
 
 [static_rebind]
@@ -101,7 +101,7 @@ auto_rebind = true
 
 # Таймаут (в миллисекундах) ожидания новой цели
 # после потери родительского dynamic bbox.
-rebind_timeout_ms = 800
+rebind_timeout_ms = 1000
 
 # Приоритет расстояния (distance priority).
 distance_weight = 1.0
@@ -111,17 +111,17 @@ area_weight = 1.0
 
 # Во сколько раз новая цель должна быть крупнее предыдущей,
 # чтобы считаться значимо более крупной.
-larger_area_factor = 2.0
+larger_area_factor = 1.5
 
 # Максимально допустимое расстояние до более крупной цели,
 # выраженное как доля диагонали кадра.
 # 0.2 = 1/5 диагонали.
-max_large_target_dist_frac = 0.2
+max_large_target_dist_frac = 0.1
 
 
 
 # Порог IoU для подтверждения, что static bbox всё ещё привязан к своей родительской dynamic цели.
-parent_iou_th = 0.15
+parent_iou_th = 0.85
 
 # Порог уверенности (скор) для повторной привязки (reattach).
 # Нужен, чтобы не дёргаться на сомнительных совпадениях.
@@ -138,4 +138,4 @@ unselected_alpha_when_selected = 0.3
 [smoothing]
 # Количество кадров для сглаживания dynamic bbox
 # (moving average).
-dynamic_bbox_window = 5
+dynamic_bbox_window = 15

@@ -168,7 +168,8 @@ int main(int argc, char *argv[]) {
             auto dets = detector.detect(frame);
             auto merged = merge_bbox.merge_detections(dets);
 
-            tracker.update(merged);
+            tracker.update(dets);
+//            tracker.update(merged);
 
             dynamic_boxes.clear();
             dynamic_ids.clear();
