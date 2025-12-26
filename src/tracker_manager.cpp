@@ -1,5 +1,7 @@
 #include "tracker_manager.h"
-
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 TrackerManager::TrackerManager(const toml::table& tbl) {
     load_tracker_config(tbl);
@@ -15,6 +17,8 @@ bool TrackerManager::load_tracker_config(const toml::table& tbl) {
         cfg_.iou_threshold = read_required<float>(*tracker, "iou_th");
         cfg_.max_missed_frames = read_required<int>(*tracker, "max_missed_frames");
         cfg_.max_targets = read_required<int>(*tracker, "max_targets");
+        cfg_.leading_only = read_required<bool>(*tracker, "leading_only");
+        cfg_.leading_min_speed = read_required<float>(*tracker, "leading_min_speed");
         return true;
 
     } catch (const std::exception &e) {
@@ -28,6 +32,7 @@ void TrackerManager::reset() {
     tracks_.clear();
     targets_.clear();
     next_id_ = 1;
+    leading_id_ = -1;
 }
 
 float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
@@ -59,6 +64,15 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             tr.bbox = detections[(size_t)best_di];
             tr.missed = 0;
             det_used[(size_t)best_di] = 1;
+            cv::Point2f center(tr.bbox.x + tr.bbox.width * 0.5f,
+                               tr.bbox.y + tr.bbox.height * 0.5f);
+            if (tr.has_center) {
+                tr.velocity = center - tr.last_center;
+            } else {
+                tr.velocity = cv::Point2f(0.0f, 0.0f);
+            }
+            tr.last_center = center;
+            tr.has_center = true;
         }
     }
 
@@ -71,12 +85,74 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
         t.bbox = detections[di];
         t.age = 0;
         t.missed = 0;
+        t.last_center = cv::Point2f(t.bbox.x + t.bbox.width * 0.5f,
+                                    t.bbox.y + t.bbox.height * 0.5f);
+        t.velocity = cv::Point2f(0.0f, 0.0f);
+        t.has_center = true;
         tracks_.push_back(std::move(t));
     }
 
     tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
         [&](const Track& t){ return t.missed > cfg_.max_missed_frames; }),
         tracks_.end());
+
+
+    if (cfg_.leading_only && !tracks_.empty()) {
+        cv::Point2f dir_sum(0.0f, 0.0f);
+        float weight_sum = 0.0f;
+        for (const auto& tr : tracks_) {
+            if (tr.missed > 0) continue;
+            float speed = std::sqrt(tr.velocity.x * tr.velocity.x +
+                                    tr.velocity.y * tr.velocity.y);
+            if (speed < cfg_.leading_min_speed) continue;
+            cv::Point2f dir = tr.velocity * (1.0f / speed);
+            dir_sum += dir * speed;
+            weight_sum += speed;
+        }
+
+        if (weight_sum > 0.0f) {
+            cv::Point2f dir = dir_sum * (1.0f / weight_sum);
+            float dir_norm = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+            if (dir_norm > 1e-3f) {
+                dir *= (1.0f / dir_norm);
+                int best_index = -1;
+                float best_proj = -std::numeric_limits<float>::infinity();
+                for (size_t i = 0; i < tracks_.size(); ++i) {
+                    if (tracks_[i].missed > 0) continue;
+                    cv::Point2f center(tracks_[i].bbox.x + tracks_[i].bbox.width * 0.5f,
+                                       tracks_[i].bbox.y + tracks_[i].bbox.height * 0.5f);
+                    float proj = center.x * dir.x + center.y * dir.y;
+                    if (proj > best_proj) {
+                        best_proj = proj;
+                        best_index = static_cast<int>(i);
+                    }
+                }
+
+                if (best_index >= 0) {
+                    leading_id_ = tracks_[static_cast<size_t>(best_index)].id;
+                }
+            }
+        }
+
+        if (leading_id_ >= 0) {
+            bool leading_found = false;
+            for (const auto& tr : tracks_) {
+                if (tr.id == leading_id_) {
+                    leading_found = true;
+                    break;
+                }
+            }
+            if (leading_found) {
+                tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
+                                             [&](const Track& t){ return t.id != leading_id_; }),
+                              tracks_.end());
+            } else {
+                leading_id_ = -1;
+            }
+        }
+    }
+
+
 
     targets_.clear();
     targets_.reserve(tracks_.size());

@@ -202,10 +202,6 @@ bool StaticBoxManager::load_static_rebind_config(const toml::table &tbl) {
         }
         cfg_.auto_rebind = read_required<bool>(*static_rebind, "auto_rebind"); //TODO
         cfg_.rebind_timeout_ms = read_required<int>(*static_rebind, "rebind_timeout_ms");
-        cfg_.distance_weight = read_required<float>(*static_rebind, "distance_weight"); //TODO
-        cfg_.area_weight = read_required<float>(*static_rebind, "area_weight"); //TODO
-        cfg_.larger_area_factor = read_required<float>(*static_rebind, "larger_area_factor"); //TODO
-        cfg_.max_large_target_dist_frac = read_required<float>(*static_rebind, "max_large_target_dist_frac"); //TODO
         cfg_.parent_iou_th = read_required<float>(*static_rebind, "parent_iou_th");
         cfg_.reattach_score_th = read_required<float>(*static_rebind, "reattach_score_th");
 

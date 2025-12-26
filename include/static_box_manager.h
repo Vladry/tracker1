@@ -64,18 +64,6 @@ private:
         // Таймаут ожидания новой цели (мс)
         int rebind_timeout_ms = 1200;
 
-        // Вес расстояния
-        float distance_weight = 1.0f;
-
-        // Вес площади
-        float area_weight = 1.0f;
-
-        // Во сколько раз новая цель должна быть крупнее
-        float larger_area_factor = 2.0f;
-
-        // Максимальная допустимая дистанция до крупной цели
-        float max_large_target_dist_frac = 0.2f;
-
         // IoU-порог родительской привязки
         float parent_iou_th = 0.15f;
 

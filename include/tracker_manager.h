@@ -14,6 +14,10 @@ private:
         int max_missed_frames = 30;
         // Максимумальное кол-во отслеживаемых активных целей
         int max_targets = 10;
+        // Оставлять только "ведущую" цель по направлению движения
+        bool leading_only = false;
+        // Минимальная скорость для учёта направления (пикселей за кадр)
+        float leading_min_speed = 2.0f;
     };
 
 
@@ -22,6 +26,9 @@ private:
         cv::Rect2f bbox;
         int age = 0;
         int missed = 0;
+        cv::Point2f last_center{0.0f, 0.0f};
+        cv::Point2f velocity{0.0f, 0.0f};
+        bool has_center = false;
     };
 
     static float iou(const cv::Rect2f &a, const cv::Rect2f &b);
@@ -29,6 +36,7 @@ private:
     int next_id_ = 1;
     std::vector<Track> tracks_;
     std::vector<Target> targets_;
+    int leading_id_ = -1;
 
     bool load_tracker_config(const toml::table& tbl);
 
