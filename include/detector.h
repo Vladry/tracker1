@@ -60,7 +60,7 @@ public:
 private:
     DetectorConfig cfg_;
     cv::Mat prev_ycrcb_;
-    cv::dnn::DetectionModel dnn_model_{};
+    std::optional<cv::dnn::DetectionModel> dnn_model_;
     bool dnn_ready_ = false;
 
     bool load_detector_config(const toml::table& tbl);

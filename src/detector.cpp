@@ -63,11 +63,11 @@ bool Detector::load_detector_config(const toml::table& tbl) {
             } else {
                 try {
                     if (cfg_.dnn_config_path.empty()) {
-                        dnn_model_ = cv::dnn::DetectionModel(cfg_.dnn_model_path);
+                        dnn_model_.emplace(cfg_.dnn_model_path);
                     } else {
-                        dnn_model_ = cv::dnn::DetectionModel(cfg_.dnn_model_path, cfg_.dnn_config_path);
+                        dnn_model_.emplace(cfg_.dnn_model_path, cfg_.dnn_config_path);
                     }
-                    dnn_model_.setInputParams(
+                    dnn_model_->setInputParams(
                             cfg_.dnn_scale,
                             cv::Size(cfg_.dnn_input_width, cfg_.dnn_input_height),
                             cfg_.dnn_mean,
@@ -117,8 +117,11 @@ std::vector<cv::Rect2f> Detector::detect_dnn(const cv::Mat& frame_bgr) {
     std::vector<int> class_ids;
     std::vector<float> confidences;
     std::vector<cv::Rect> boxes;
-    dnn_model_.detect(frame_bgr, class_ids, confidences, boxes,
-                      cfg_.dnn_conf_threshold, cfg_.dnn_nms_threshold);
+    if (!dnn_model_) {
+        return out;
+    }
+    dnn_model_->detect(frame_bgr, class_ids, confidences, boxes,
+                       cfg_.dnn_conf_threshold, cfg_.dnn_nms_threshold);
 
     for (size_t i = 0; i < boxes.size(); ++i) {
         if (cfg_.dnn_class_id >= 0 && class_ids[i] != cfg_.dnn_class_id) {
