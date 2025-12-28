@@ -17,6 +17,11 @@ configure_file(
         COPYONLY
 )
 
+if (EXISTS "${CMAKE_SOURCE_DIR}/models")
+    file(COPY "${CMAKE_SOURCE_DIR}/models" DESTINATION "${CMAKE_BINARY_DIR}")
+endif ()
+
+
 target_sources(Five_Threads PRIVATE
         src/detector.cpp
         src/display_loop.cpp
