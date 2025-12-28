@@ -22,10 +22,12 @@ bool Detector::load_detector_config(const toml::table& tbl) {
         cfg_.downscale = read_required<double>(*detector, "downscale");
 
         if (const auto node = detector->get("use_dnn"); node && node->value<bool>()) {
-            cfg_.use_dnn = *node->value<bool>();
+            cfg_.use_dnn = *node->value<bool>(); std::cout<<"use_dnn= "<<cfg_.use_dnn<<std::endl;
+            std::cout.flush();
         }
         if (const auto node = detector->get("dnn_model_path"); node && node->value<std::string>()) {
-            cfg_.dnn_model_path = *node->value<std::string>();
+            cfg_.dnn_model_path = *node->value<std::string>();std::cout<<"dnn_model_path= "<<cfg_.dnn_model_path<<std::endl;
+            std::cout.flush();
         }
         if (const auto node = detector->get("dnn_config_path"); node && node->value<std::string>()) {
             cfg_.dnn_config_path = *node->value<std::string>();
@@ -56,6 +58,7 @@ bool Detector::load_detector_config(const toml::table& tbl) {
             if (cfg_.dnn_model_path.empty()) {
                 std::cerr << "detector config: dnn_model_path is empty, fallback to motion detector"
                           << std::endl;
+                std::cerr.flush();
                 cfg_.use_dnn = false;
             } else {
                 try {
@@ -73,6 +76,7 @@ bool Detector::load_detector_config(const toml::table& tbl) {
                     dnn_ready_ = true;
                 } catch (const std::exception &e) {
                     std::cerr << "detector dnn init failed: " << e.what() << std::endl;
+                    std::cerr.flush();
                     dnn_ready_ = false;
                     cfg_.use_dnn = false;
                 }
@@ -82,6 +86,7 @@ bool Detector::load_detector_config(const toml::table& tbl) {
 
     } catch (const std::exception &e) {
         std::cerr << "detector config load failed  " << e.what() << std::endl;
+        std::cerr.flush();
         return false;
     }
 };
