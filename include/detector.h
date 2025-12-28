@@ -7,25 +7,7 @@
 class Detector {
 private:
     struct DetectorConfig {
-        // Минимальная разница яркости (0 = отключить яркостной анализ)
-        int diff_threshold = 0;
-
-        // Минимальная разница цветности (Cb/Cr) между кадрами
-        int chroma_threshold = 10;
-
-        // Минимальная площадь bbox
-        int min_area = 20;
-
-        // Коэффициент чувствительности детектора
-        double sensitivity = 1.0;
-
-        // Размер морфологического ядра
-        int morph_kernel = 3;
-
-        // Downscale перед детекцией
-        double downscale = 1.0;
-
-        // Использовать DNN детектор вместо motion
+        // Использовать DNN детектор
         bool use_dnn = false;
 
         // Путь к модели DNN (например, ONNX)
@@ -59,11 +41,10 @@ public:
 
 private:
     DetectorConfig cfg_;
-    cv::Mat prev_ycrcb_;
-    std::optional<cv::dnn::DetectionModel> dnn_model_;
+    cv::dnn::Net dnn_net_;
+    std::vector<std::string> dnn_output_names_;
     bool dnn_ready_ = false;
 
     bool load_detector_config(const toml::table& tbl);
-    std::vector<cv::Rect2f> detect_motion(const cv::Mat& frame_bgr);
     std::vector<cv::Rect2f> detect_dnn(const cv::Mat& frame_bgr);
 };

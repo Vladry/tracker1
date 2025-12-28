@@ -9,7 +9,9 @@ pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
 
 find_package(OpenCV REQUIRED)
 
-add_executable(Five_Threads)
+add_executable(Five_Threads
+        include/yolo_postprocess.h
+        src/yolo_postprocess.cpp)
 
 configure_file(
         ${CMAKE_SOURCE_DIR}/config.toml
@@ -33,6 +35,7 @@ target_sources(Five_Threads PRIVATE
         src/static_box_manager.cpp
         src/tracker_manager.cpp
         src/merge_bbox.cpp
+        src/yolo_postprocess.cpp
 )
 
 target_include_directories(Five_Threads PRIVATE
