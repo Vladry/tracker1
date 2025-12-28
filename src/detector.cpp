@@ -93,7 +93,19 @@ bool Detector::load_detector_config(const toml::table& tbl) {
 
 std::vector<cv::Rect2f> Detector::detect(const cv::Mat& frame_bgr) {
     if (cfg_.use_dnn && dnn_ready_) {
-        return detect_dnn(frame_bgr);
+        try {
+            return detect_dnn(frame_bgr);
+        } catch (const cv::Exception &e) {
+            std::cerr << "detector dnn detect failed: " << e.what()
+                      << " (falling back to motion detector). "
+                      << "The configured model may be incompatible with OpenCV "
+                      << "DetectionModel in 4.5.4; try a supported model "
+                      << "(e.g. SSD/YOLOv3/YOLOv4) or implement custom postprocess."
+                      << std::endl;
+            std::cerr.flush();
+            dnn_ready_ = false;
+            cfg_.use_dnn = false;
+        }
     }
     return detect_motion(frame_bgr);
 }
