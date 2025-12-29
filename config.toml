@@ -4,7 +4,7 @@
 use_rknn = true
 
 # Путь к модели RKNN.
-rknn_model_path = "models/yolov8n.rknn"
+rknn_model_path = "models/yolov8n_fp16.rknn"
 
 # Нормализация входа.
 rknn_scale = 0.0039215686
@@ -16,6 +16,7 @@ rknn_nms_threshold = 0.45
 
 # Фильтр по классу (-1 = все классы).
 rknn_class_id = -1
+
 
 
 [tracker]

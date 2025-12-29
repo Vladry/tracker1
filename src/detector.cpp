@@ -101,6 +101,11 @@ bool Detector::load_detector_config(const toml::table& tbl) {
                 }
 
                 rknn_ready_ = true;
+                std::cout << "rknn model loaded: " << cfg_.rknn_model_path
+                          << " (inputs=" << io_num.n_input
+                          << ", outputs=" << io_num.n_output << ")"
+                          << std::endl;
+                std::cout.flush();
             }
         }
         return true;

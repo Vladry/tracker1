@@ -18,6 +18,15 @@ find_library(RKNNRT_LIB rknnrt
 if (NOT RKNNRT_LIB)
     message(FATAL_ERROR "RKNNRT_LIB not found. Install librknnrt.so and/or set RKNNRT_LIB.")
 endif ()
+find_path(RKNN_INCLUDE_DIR rknn_api.h
+        PATHS
+        /usr/include
+        /usr/local/include
+        /opt/rknn/include
+)
+if (NOT RKNN_INCLUDE_DIR)
+    message(FATAL_ERROR "rknn_api.h not found. Install RKNN headers and/or set RKNN_INCLUDE_DIR.")
+endif ()
 
 add_executable(Five_Threads)
 
@@ -49,6 +58,7 @@ target_sources(Five_Threads PRIVATE
 target_include_directories(Five_Threads PRIVATE
         ${GST_INCLUDE_DIRS}
         ${OpenCV_INCLUDE_DIRS}
+        ${RKNN_INCLUDE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tomlplusplus/include
 )
