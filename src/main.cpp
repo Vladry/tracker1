@@ -66,6 +66,10 @@ int main(int argc, char *argv[]) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 
+    if (!std::getenv("DISPLAY")) {
+        setenv("DISPLAY", ":0", 0);
+    }
+
     gst_init(&argc, &argv);
     std::cout << "STARTING PIPELINE..." << std::endl;
 

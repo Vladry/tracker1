@@ -8,10 +8,18 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
 
 find_package(OpenCV REQUIRED)
+find_library(RKNNRT_LIB rknnrt
+        PATHS
+        /usr/lib
+        /usr/lib/aarch64-linux-gnu
+        /usr/local/lib
+        /opt/rknn/lib
+)
+if (NOT RKNNRT_LIB)
+    message(FATAL_ERROR "RKNNRT_LIB not found. Install librknnrt.so and/or set RKNNRT_LIB.")
+endif ()
 
-add_executable(Five_Threads
-        include/yolo_postprocess.h
-        src/yolo_postprocess.cpp)
+add_executable(Five_Threads)
 
 configure_file(
         ${CMAKE_SOURCE_DIR}/config.toml
@@ -48,6 +56,7 @@ target_include_directories(Five_Threads PRIVATE
 target_link_libraries(Five_Threads PRIVATE
         ${GST_LIBRARIES}
         ${OpenCV_LIBS}
+        ${RKNNRT_LIB}
         pthread
 )
 

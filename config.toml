@@ -1,28 +1,21 @@
 [detector]
-# Использовать DNN-детектор.
-# true = включить DNN, false = отключить детектор.
-use_dnn = true
+# Использовать RKNN-детектор.
+# true = включить RKNN, false = отключить детектор.
+use_rknn = true
 
-# Путь к модели DNN (например, .onnx).
-dnn_model_path = "models/yolov8n.onnx"
-
-# Путь к конфигу (если требуется конкретному бэкэнду).
-dnn_config_path = ""
-
-# Размер входа сети (ширина/высота).
-dnn_input_width = 640
-dnn_input_height = 640
+# Путь к модели RKNN.
+rknn_model_path = "models/yolov8n.rknn"
 
 # Нормализация входа.
-dnn_scale = 0.0039215686
-dnn_swap_rb = true
+rknn_scale = 0.0039215686
+rknn_swap_rb = true
 
-# Пороги уверенности и NMS для DNN.
-dnn_conf_threshold = 0.35
-dnn_nms_threshold = 0.45
+# Пороги уверенности и NMS для RKNN.
+rknn_conf_threshold = 0.35
+rknn_nms_threshold = 0.45
 
 # Фильтр по классу (-1 = все классы).
-dnn_class_id = -1
+rknn_class_id = -1
 
 
 [tracker]
@@ -178,7 +171,7 @@ latency_ms = 0
 # Таймауты rtspsrc (микросекунды).
 # Больше = дольше ждём сеть (меньше ложных рестартов),
 # но позже замечаем реальную проблему.
-# Меньше = быстрее реакция, но больше риск флаппинга.
+# Меньше = быстрее реакця, но больше риск флаппинга.
 timeout_us = 2000000
 tcp_timeout_us = 2000000
 
