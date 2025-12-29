@@ -1,4 +1,5 @@
 #include "yolo_postprocess.h"
+#include <algorithm>
 #include <opencv2/dnn.hpp>
 
 std::vector<cv::Rect2f> decode_yolov8_output(
@@ -74,6 +75,18 @@ std::vector<cv::Rect2f> decode_yolov8_output(
         float top = (y - 0.5f * h) * scale_y;
         float width = w * scale_x;
         float height = h * scale_y;
+
+        float right = left + width;
+        float bottom = top + height;
+        left = std::max(0.0f, std::min(left, static_cast<float>(frame_size.width - 1)));
+        top = std::max(0.0f, std::min(top, static_cast<float>(frame_size.height - 1)));
+        right = std::max(0.0f, std::min(right, static_cast<float>(frame_size.width)));
+        bottom = std::max(0.0f, std::min(bottom, static_cast<float>(frame_size.height)));
+        width = right - left;
+        height = bottom - top;
+        if (width <= 1.0f || height <= 1.0f) {
+            continue;
+        }
 
         boxes.emplace_back(static_cast<int>(left),
                            static_cast<int>(top),

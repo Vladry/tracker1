@@ -2,6 +2,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include "yolo_postprocess.h"
 
 namespace {
@@ -17,6 +18,27 @@ namespace {
 
     bool is_nchw(const rknn_tensor_attr &attr) {
         return attr.fmt == RKNN_TENSOR_NCHW;
+    }
+
+    size_t tensor_elem_count(const rknn_tensor_attr &attr) {
+        size_t count = 1;
+        for (uint32_t i = 0; i < attr.n_dims; ++i) {
+            count *= static_cast<size_t>(attr.dims[i]);
+        }
+        return count;
+    }
+
+    std::string tensor_dims_to_string(const rknn_tensor_attr &attr) {
+        std::ostringstream oss;
+        oss << "[";
+        for (uint32_t i = 0; i < attr.n_dims; ++i) {
+            oss << attr.dims[i];
+            if (i + 1 < attr.n_dims) {
+                oss << "x";
+            }
+        }
+        oss << "]";
+        return oss.str();
     }
 }
 
@@ -98,6 +120,11 @@ bool Detector::load_detector_config(const toml::table& tbl) {
                     if (rknn_query(rknn_ctx_, RKNN_QUERY_OUTPUT_ATTR, &output_attrs_[i], sizeof(output_attrs_[i])) != RKNN_SUCC) {
                         throw std::runtime_error("rknn_query output attr failed");
                     }
+                    std::cout << "rknn output[" << i << "] dims="
+                              << tensor_dims_to_string(output_attrs_[i])
+                              << " fmt=" << output_attrs_[i].fmt
+                              << " type=" << output_attrs_[i].type
+                              << std::endl;
                 }
 
                 rknn_ready_ = true;
@@ -224,13 +251,23 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
         throw std::runtime_error("rknn_outputs_get failed");
     }
 
-    const rknn_tensor_attr &out_attr = output_attrs_[0];
+    int best_idx = 0;
+    size_t best_count = 0;
+    for (int i = 0; i < output_count; ++i) {
+        const size_t count = tensor_elem_count(output_attrs_[i]);
+        if (count > best_count) {
+            best_count = count;
+            best_idx = i;
+        }
+    }
+
+    const rknn_tensor_attr &out_attr = output_attrs_[best_idx];
     std::vector<int> sizes(out_attr.n_dims);
     for (uint32_t i = 0; i < out_attr.n_dims; ++i) {
         sizes[i] = static_cast<int>(out_attr.dims[i]);
     }
 
-    cv::Mat output_mat(out_attr.n_dims, sizes.data(), CV_32F, outputs[0].buf);
+    cv::Mat output_mat(out_attr.n_dims, sizes.data(), CV_32F, outputs[best_idx].buf);
     out = decode_yolov8_output(
             output_mat,
             input_size,
