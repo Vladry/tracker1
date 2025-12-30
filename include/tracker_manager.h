@@ -47,10 +47,6 @@ public:
 
     std::vector<Target> update(const std::vector<cv::Rect2f> &detections);
 
-    int pickTargetId(int x, int y) const;
-
-    bool hasTargetId(int id) const;
-
     const std::vector<Target> &targets() const { return targets_; }
 
 

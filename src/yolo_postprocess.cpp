@@ -1,6 +1,7 @@
 #include "yolo_postprocess.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <opencv2/dnn.hpp>
 
 std::vector<cv::Rect2f> decode_yolov8_output(
@@ -16,6 +17,7 @@ std::vector<cv::Rect2f> decode_yolov8_output(
 ) {
     std::vector<cv::Rect2f> out;
     if (output.empty()) {
+        std::cout << "[POST] empty output матрица" << std::endl;
         return out;
     }
 
@@ -24,6 +26,7 @@ std::vector<cv::Rect2f> decode_yolov8_output(
         const int dim1 = output.size[1];
         const int dim2 = output.size[2];
         if (dim1 <= 0 || dim2 <= 0) {
+            std::cout << "[POST] некорректные dims: " << dim1 << "x" << dim2 << std::endl;
             return out;
         }
         cv::Mat data(dim1, dim2, CV_32F, const_cast<float*>(output.ptr<float>()));
@@ -31,11 +34,13 @@ std::vector<cv::Rect2f> decode_yolov8_output(
     } else if (output.dims == 2) {
         dets = output;
     } else {
+        std::cout << "[POST] неподдерживаемое число измерений: " << output.dims << std::endl;
         return out;
     }
 
     const int num_attrs = dets.cols;
     if (num_attrs < 6) {
+        std::cout << "[POST] слишком мало атрибутов: " << num_attrs << std::endl;
         return out;
     }
 
@@ -43,12 +48,23 @@ std::vector<cv::Rect2f> decode_yolov8_output(
     std::vector<float> confidences;
 
     if (scale <= 0.0f) {
+        std::cout << "[POST] некорректный scale: " << scale << std::endl;
         return out;
     }
+    std::cout << "[POST] dets: rows=" << dets.rows
+              << " cols=" << dets.cols
+              << " scale=" << scale
+              << " pad=(" << pad_x << "," << pad_y << ")"
+              << std::endl;
 
     auto sigmoid = [](float v) {
         return 1.0f / (1.0f + std::exp(-v));
     };
+
+    float max_obj = 0.0f;
+    float max_class = 0.0f;
+    float max_score = 0.0f;
+    int passed_threshold = 0;
 
     for (int i = 0; i < dets.rows; ++i) {
         const float* row = dets.ptr<float>(i);
@@ -69,16 +85,27 @@ std::vector<cv::Rect2f> decode_yolov8_output(
         if (needs_sigmoid) {
             obj_score = sigmoid(obj_score);
         }
+        if (obj_score > max_obj) {
+            max_obj = obj_score;
+        }
 
         int best_class = -1;
         float best_score = 0.0f;
+        float best_class_score = 0.0f;
         for (int c = 5; c < num_attrs; ++c) {
             float class_score = needs_sigmoid ? sigmoid(row[c]) : row[c];
             float score = class_score * obj_score;
             if (score > best_score) {
                 best_score = score;
                 best_class = c - 5;
+                best_class_score = class_score;
             }
+        }
+        if (best_class_score > max_class) {
+            max_class = best_class_score;
+        }
+        if (best_score > max_score) {
+            max_score = best_score;
         }
 
         if (best_score < conf_threshold) {
@@ -87,6 +114,7 @@ std::vector<cv::Rect2f> decode_yolov8_output(
         if (class_id >= 0 && best_class != class_id) {
             continue;
         }
+        passed_threshold++;
 
         if (x <= 1.0f && y <= 1.0f && w <= 1.0f && h <= 1.0f) {
             x *= static_cast<float>(input_size.width);
@@ -129,6 +157,15 @@ std::vector<cv::Rect2f> decode_yolov8_output(
 
     std::vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, conf_threshold, nms_threshold, indices);
+    std::cout << "[POST] boxes=" << boxes.size()
+              << " after_nms=" << indices.size()
+              << " passed_th=" << passed_threshold
+              << " max_obj=" << max_obj
+              << " max_class=" << max_class
+              << " max_score=" << max_score
+              << " conf_th=" << conf_threshold
+              << " nms_th=" << nms_threshold
+              << std::endl;
 
     for (int idx : indices) {
         const cv::Rect &r = boxes[idx];

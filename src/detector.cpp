@@ -167,6 +167,8 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
 
     const cv::Size input_size = input_size_from_attr(input_attr_);
     if (input_size.width <= 0 || input_size.height <= 0) {
+        std::cout << "[DET] некорректный input_size: "
+                  << input_size.width << "x" << input_size.height << std::endl;
         return out;
     }
 
@@ -186,6 +188,13 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
     const int pad_top = pad_h / 2;
     const int pad_right = pad_w - pad_left;
     const int pad_bottom = pad_h - pad_top;
+    std::cout << "[DET] frame=" << frame_bgr.cols << "x" << frame_bgr.rows
+              << " input=" << input_size.width << "x" << input_size.height
+              << " scale=" << scale
+              << " resized=" << resized_w << "x" << resized_h
+              << " pad=(" << pad_left << "," << pad_top
+              << "," << pad_right << "," << pad_bottom << ")"
+              << std::endl;
 
     cv::Mat resized;
     cv::resize(frame_bgr, resized, cv::Size(resized_w, resized_h));
@@ -217,6 +226,10 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
             input.size = static_cast<size_t>(resized.total() * resized.elemSize());
         }
         input.type = RKNN_TENSOR_UINT8;
+        std::cout << "[DET] input type=UINT8"
+                  << " fmt=" << input_attr_.fmt
+                  << " nchw=" << (is_nchw(input_attr_) ? "true" : "false")
+                  << " size=" << input.size << std::endl;
     } else {
         cv::Mat float_img;
         resized.convertTo(float_img, CV_32F);
@@ -244,6 +257,12 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
             input.size = static_cast<size_t>(float_img.total() * float_img.elemSize());
         }
         input.type = RKNN_TENSOR_FLOAT32;
+        std::cout << "[DET] input type=FLOAT32"
+                  << " fmt=" << input_attr_.fmt
+                  << " nchw=" << (is_nchw(input_attr_) ? "true" : "false")
+                  << " size=" << input.size
+                  << " scale=" << cfg_.rknn_scale
+                  << std::endl;
     }
 
     input.index = 0;
@@ -271,6 +290,7 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
     if (rknn_outputs_get(rknn_ctx_, output_count, outputs.data(), nullptr) != RKNN_SUCC) {
         throw std::runtime_error("rknn_outputs_get failed");
     }
+    std::cout << "[DET] outputs_get count=" << output_count << std::endl;
 
     int best_idx = 0;
     size_t best_count = 0;
@@ -283,6 +303,12 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
     }
 
     const rknn_tensor_attr &out_attr = output_attrs_[best_idx];
+    std::cout << "[DET] best output index=" << best_idx
+              << " dims=" << tensor_dims_to_string(out_attr)
+              << " fmt=" << out_attr.fmt
+              << " type=" << out_attr.type
+              << std::endl;
+
     std::vector<int> sizes(out_attr.n_dims);
     for (uint32_t i = 0; i < out_attr.n_dims; ++i) {
         sizes[i] = static_cast<int>(out_attr.dims[i]);
@@ -302,5 +328,6 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
     );
 
     rknn_outputs_release(rknn_ctx_, output_count, outputs.data());
+    std::cout << "[DET] detections=" << out.size() << std::endl;
     return out;
 }

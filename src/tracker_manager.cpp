@@ -1,6 +1,7 @@
 #include "tracker_manager.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <limits>
 
 
@@ -20,6 +21,12 @@ bool TrackerManager::load_tracker_config(const toml::table& tbl) {
         cfg_.max_targets = read_required<int>(*tracker, "max_targets");
         cfg_.leading_only = read_required<bool>(*tracker, "leading_only");
         cfg_.leading_min_speed = read_required<float>(*tracker, "leading_min_speed");
+        std::cout << "[TRK] config: iou_th=" << cfg_.iou_threshold
+                  << " max_missed=" << cfg_.max_missed_frames
+                  << " max_targets=" << cfg_.max_targets
+                  << " leading_only=" << (cfg_.leading_only ? "true" : "false")
+                  << " leading_min_speed=" << cfg_.leading_min_speed
+                  << std::endl;
         return true;
 
     } catch (const std::exception &e) {
@@ -44,6 +51,9 @@ float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
 }
 
 std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detections) {
+    std::cout << "[TRK] update: detections=" << detections.size()
+              << " tracks_before=" << tracks_.size()
+              << std::endl;
     for (auto& t : tracks_) {
         t.age++;
         t.missed++;
@@ -96,6 +106,7 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
     tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
                                  [&](const Track& t){ return t.missed > cfg_.max_missed_frames; }),
                   tracks_.end());
+    std::cout << "[TRK] tracks_after_prune=" << tracks_.size() << std::endl;
 
     if (cfg_.leading_only && !tracks_.empty()) {
         cv::Point2f dir_sum(0.0f, 0.0f);
@@ -190,17 +201,8 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             targets_.push_back(std::move(tg));
         }
     }
+    std::cout << "[TRK] targets=" << targets_.size()
+              << " leading_id=" << leading_id_
+              << std::endl;
     return targets_;
-}
-
-int TrackerManager::pickTargetId(int x, int y) const {
-    for (const auto& t : targets_) {
-        if (t.bbox.contains(cv::Point2f((float)x, (float)y))) return t.id;
-    }
-    return -1;
-}
-
-bool TrackerManager::hasTargetId(int id) const {
-    for (const auto& t : targets_) if (t.id == id) return true;
-    return false;
 }
