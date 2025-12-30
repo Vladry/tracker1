@@ -30,17 +30,17 @@ rknn_class_id = -1
 history = 500
 
 # Порог вариативности пикселя. Меньше значение чувствительнее к движению.
-var_threshold = 16.0
+var_threshold = 6.0
 
 # Обнаружение теней. При true в маске возможны полутоновые пиксели.
 detect_shadows = false
 
 # Минимальная площадь движения (в пикселях) для ROI.
-min_area = 60
+min_area = 20
 
 # Минимальная ширина/высота ROI, чтобы отбросить шум.
-min_width = 12
-min_height = 12
+min_width = 8
+min_height = 8
 
 # Размытие маски движения для подавления шума (нечётное значение).
 blur_size = 5
@@ -69,12 +69,18 @@ fallback_box_size = 40
 # Максимально допустимая доля площади кадра для ROI (0..1).
 max_area_ratio = 0.1
 
+# Радиус поиска движущейся цели вокруг клика (пиксели).
+motion_search_radius = 60
+
+# Порог разницы яркости для поиска движения (0..255).
+motion_diff_threshold = 15
+
 # Допуски flood fill по яркости.
 floodfill_lo_diff = 20
 floodfill_hi_diff = 20
 
 # Минимальный размер ROI для принятия.
-min_area = 200
+min_area = 60
 min_width = 10
 min_height = 10
 

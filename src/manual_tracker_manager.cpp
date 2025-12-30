@@ -35,6 +35,8 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.remove_padding = read_required<int>(*cfg, "remove_padding");
         cfg_.fallback_box_size = read_required<int>(*cfg, "fallback_box_size");
         cfg_.max_area_ratio = read_required<float>(*cfg, "max_area_ratio");
+        cfg_.motion_search_radius = read_required<int>(*cfg, "motion_search_radius");
+        cfg_.motion_diff_threshold = read_required<int>(*cfg, "motion_diff_threshold");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
         cfg_.min_area = read_required<int>(*cfg, "min_area");
@@ -53,6 +55,8 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " remove_padding=" << cfg_.remove_padding
                   << " fallback_box_size=" << cfg_.fallback_box_size
                   << " max_area_ratio=" << cfg_.max_area_ratio
+                  << " motion_search_radius=" << cfg_.motion_search_radius
+                  << " motion_diff_threshold=" << cfg_.motion_diff_threshold
                   << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
                   << " floodfill_hi_diff=" << cfg_.floodfill_hi_diff
                   << " min_area=" << cfg_.min_area
@@ -145,6 +149,67 @@ cv::Rect2f ManualTrackerManager::build_roi_from_click(const cv::Mat& frame, int 
         }
     }
     return clip_rect(roi, frame.size());
+}
+
+cv::Rect2f ManualTrackerManager::find_motion_roi(const cv::Mat& frame, int x, int y) {
+    if (prev_gray_.empty() || frame.empty()) {
+        return {};
+    }
+
+    cv::Mat gray;
+    if (frame.channels() == 3) {
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+    } else {
+        gray = frame;
+    }
+
+    cv::Mat diff;
+    cv::absdiff(gray, prev_gray_, diff);
+    cv::threshold(diff, diff, cfg_.motion_diff_threshold, 255, cv::THRESH_BINARY);
+
+    const int r = std::max(1, cfg_.motion_search_radius);
+    const int x1 = std::max(0, x - r);
+    const int y1 = std::max(0, y - r);
+    const int x2 = std::min(diff.cols, x + r);
+    const int y2 = std::min(diff.rows, y + r);
+    if (x2 <= x1 || y2 <= y1) {
+        return {};
+    }
+
+    cv::Rect search_rect(x1, y1, x2 - x1, y2 - y1);
+    cv::Mat search = diff(search_rect);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(search, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    if (contours.empty()) {
+        return {};
+    }
+
+    float best_dist = std::numeric_limits<float>::max();
+    cv::Rect best_rect;
+    for (const auto& contour : contours) {
+        const double area = cv::contourArea(contour);
+        if (area < cfg_.min_area) {
+            continue;
+        }
+        cv::Rect rect = cv::boundingRect(contour);
+        rect.x += search_rect.x;
+        rect.y += search_rect.y;
+        cv::Point2f center(rect.x + rect.width * 0.5f,
+                           rect.y + rect.height * 0.5f);
+        const float dx = center.x - static_cast<float>(x);
+        const float dy = center.y - static_cast<float>(y);
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        if (dist < best_dist) {
+            best_dist = dist;
+            best_rect = rect;
+        }
+    }
+
+    if (best_rect.area() <= 0) {
+        return {};
+    }
+    return clip_rect(cv::Rect2f(best_rect), frame.size());
 }
 
 void ManualTrackerManager::init_kalman(ManualTrack& track, const cv::Point2f& center) {
@@ -259,7 +324,10 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
         return false;
     }
 
-    cv::Rect2f roi = build_roi_from_click(frame, x, y);
+    cv::Rect2f roi = find_motion_roi(frame, x, y);
+    if (roi.area() <= 1.0f) {
+        roi = build_roi_from_click(frame, x, y);
+    }
     if (roi.area() <= 1.0f) {
         return false;
     }
@@ -370,6 +438,15 @@ void ManualTrackerManager::update(const cv::Mat& frame, long long now_ms) {
     }
 
     refresh_targets();
+
+    if (frame.empty()) {
+        return;
+    }
+    if (frame.channels() == 3) {
+        cv::cvtColor(frame, prev_gray_, cv::COLOR_BGR2GRAY);
+    } else {
+        prev_gray_ = frame.clone();
+    }
 }
 
 void ManualTrackerManager::refresh_targets() {

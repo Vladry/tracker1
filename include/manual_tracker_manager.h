@@ -15,6 +15,8 @@ public:
         int remove_padding = 6;
         int fallback_box_size = 40;
         float max_area_ratio = 0.1f;
+        int motion_search_radius = 30;
+        int motion_diff_threshold = 25;
         int floodfill_lo_diff = 20;
         int floodfill_hi_diff = 20;
         int min_area = 200;
@@ -55,9 +57,11 @@ private:
     std::vector<Target> targets_;
     int next_id_ = 1;
     std::mutex mutex_;
+    cv::Mat prev_gray_;
 
     bool load_config(const toml::table& tbl);
     cv::Rect2f build_roi_from_click(const cv::Mat& frame, int x, int y) const;
+    cv::Rect2f find_motion_roi(const cv::Mat& frame, int x, int y);
     cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) const;
     void init_kalman(ManualTrack& track, const cv::Point2f& center);
     void predict_kalman(ManualTrack& track);
