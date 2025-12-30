@@ -1,4 +1,6 @@
 #include "detector.h"
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -168,8 +170,27 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
         return out;
     }
 
+    const float scale = std::min(
+            static_cast<float>(input_size.width) / static_cast<float>(frame_bgr.cols),
+            static_cast<float>(input_size.height) / static_cast<float>(frame_bgr.rows)
+    );
+    if (scale <= 0.0f) {
+        return out;
+    }
+
+    const int resized_w = static_cast<int>(std::round(frame_bgr.cols * scale));
+    const int resized_h = static_cast<int>(std::round(frame_bgr.rows * scale));
+    const int pad_w = input_size.width - resized_w;
+    const int pad_h = input_size.height - resized_h;
+    const int pad_left = pad_w / 2;
+    const int pad_top = pad_h / 2;
+    const int pad_right = pad_w - pad_left;
+    const int pad_bottom = pad_h - pad_top;
+
     cv::Mat resized;
-    cv::resize(frame_bgr, resized, input_size);
+    cv::resize(frame_bgr, resized, cv::Size(resized_w, resized_h));
+    cv::copyMakeBorder(resized, resized, pad_top, pad_bottom, pad_left, pad_right,
+                       cv::BORDER_CONSTANT, cv::Scalar(114, 114, 114));
     if (cfg_.rknn_swap_rb) {
         cv::cvtColor(resized, resized, cv::COLOR_BGR2RGB);
     }
@@ -272,6 +293,9 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
             output_mat,
             input_size,
             frame_bgr.size(),
+            scale,
+            static_cast<float>(pad_left),
+            static_cast<float>(pad_top),
             cfg_.rknn_conf_threshold,
             cfg_.rknn_nms_threshold,
             cfg_.rknn_class_id

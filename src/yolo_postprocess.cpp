@@ -1,11 +1,15 @@
 #include "yolo_postprocess.h"
 #include <algorithm>
+#include <cmath>
 #include <opencv2/dnn.hpp>
 
 std::vector<cv::Rect2f> decode_yolov8_output(
         const cv::Mat& output,
         const cv::Size& input_size,
         const cv::Size& frame_size,
+        float scale,
+        float pad_x,
+        float pad_y,
         float conf_threshold,
         float nms_threshold,
         int class_id
@@ -38,8 +42,13 @@ std::vector<cv::Rect2f> decode_yolov8_output(
     std::vector<cv::Rect> boxes;
     std::vector<float> confidences;
 
-    const float scale_x = static_cast<float>(frame_size.width) / static_cast<float>(input_size.width);
-    const float scale_y = static_cast<float>(frame_size.height) / static_cast<float>(input_size.height);
+    if (scale <= 0.0f) {
+        return out;
+    }
+
+    auto sigmoid = [](float v) {
+        return 1.0f / (1.0f + std::exp(-v));
+    };
 
     for (int i = 0; i < dets.rows; ++i) {
         const float* row = dets.ptr<float>(i);
@@ -48,12 +57,27 @@ std::vector<cv::Rect2f> decode_yolov8_output(
         float w = row[2];
         float h = row[3];
 
+        bool needs_sigmoid = false;
+        for (int c = 4; c < num_attrs; ++c) {
+            if (row[c] < 0.0f || row[c] > 1.0f) {
+                needs_sigmoid = true;
+                break;
+            }
+        }
+
+        float obj_score = row[4];
+        if (needs_sigmoid) {
+            obj_score = sigmoid(obj_score);
+        }
+
         int best_class = -1;
         float best_score = 0.0f;
-        for (int c = 4; c < num_attrs; ++c) {
-            if (row[c] > best_score) {
-                best_score = row[c];
-                best_class = c - 4;
+        for (int c = 5; c < num_attrs; ++c) {
+            float class_score = needs_sigmoid ? sigmoid(row[c]) : row[c];
+            float score = class_score * obj_score;
+            if (score > best_score) {
+                best_score = score;
+                best_class = c - 5;
             }
         }
 
@@ -71,10 +95,18 @@ std::vector<cv::Rect2f> decode_yolov8_output(
             h *= static_cast<float>(input_size.height);
         }
 
-        float left = (x - 0.5f * w) * scale_x;
-        float top = (y - 0.5f * h) * scale_y;
-        float width = w * scale_x;
-        float height = h * scale_y;
+        float left = x - 0.5f * w;
+        float top = y - 0.5f * h;
+        float width = w;
+        float height = h;
+
+        left -= pad_x;
+        top -= pad_y;
+
+        left /= scale;
+        top /= scale;
+        width /= scale;
+        height /= scale;
 
         float right = left + width;
         float bottom = top + height;
