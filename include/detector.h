@@ -7,6 +7,9 @@
 class Detector {
 private:
     struct DetectorConfig {
+        // Использовать детектор движения
+        bool use_motion = true;
+
         // Использовать RKNN детектор
         bool use_rknn = false;
 
@@ -24,6 +27,18 @@ private:
 
         // Фильтр по классу (-1 = все классы)
         int rknn_class_id = -1;
+
+        // -------------------- motion detector --------------------
+        int motion_history = 500;
+        double motion_var_threshold = 16.0;
+        bool motion_detect_shadows = false;
+        int motion_min_area = 500;
+        int motion_min_width = 10;
+        int motion_min_height = 10;
+        int motion_blur_size = 5;
+        int motion_morph_size = 3;
+        int motion_erode_iterations = 1;
+        int motion_dilate_iterations = 2;
     };
 
 public:
@@ -39,7 +54,9 @@ private:
     rknn_tensor_attr input_attr_{};
     std::vector<rknn_tensor_attr> output_attrs_;
     bool rknn_ready_ = false;
+    cv::Ptr<cv::BackgroundSubtractor> motion_subtractor_;
 
     bool load_detector_config(const toml::table& tbl);
     std::vector<cv::Rect2f> detect_rknn(const cv::Mat& frame_bgr);
+    std::vector<cv::Rect2f> detect_motion(const cv::Mat& frame_bgr);
 };
