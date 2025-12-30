@@ -61,6 +61,12 @@ std::vector<cv::Rect2f> decode_yolov8_output(
         return 1.0f / (1.0f + std::exp(-v));
     };
 
+    const bool has_objectness = (num_attrs - 4) > 1 && num_attrs != 84;
+    std::cout << "[POST] layout: "
+              << (has_objectness ? "obj+class" : "class-only")
+              << " attrs=" << num_attrs
+              << std::endl;
+
     float max_obj = 0.0f;
     float max_class = 0.0f;
     float max_score = 0.0f;
@@ -81,23 +87,28 @@ std::vector<cv::Rect2f> decode_yolov8_output(
             }
         }
 
-        float obj_score = row[4];
-        if (needs_sigmoid) {
-            obj_score = sigmoid(obj_score);
-        }
-        if (obj_score > max_obj) {
-            max_obj = obj_score;
-        }
-
         int best_class = -1;
         float best_score = 0.0f;
         float best_class_score = 0.0f;
-        for (int c = 5; c < num_attrs; ++c) {
+        float obj_score = 1.0f;
+        int class_offset = 4;
+        if (has_objectness) {
+            obj_score = row[4];
+            if (needs_sigmoid) {
+                obj_score = sigmoid(obj_score);
+            }
+            if (obj_score > max_obj) {
+                max_obj = obj_score;
+            }
+            class_offset = 5;
+        }
+
+        for (int c = class_offset; c < num_attrs; ++c) {
             float class_score = needs_sigmoid ? sigmoid(row[c]) : row[c];
             float score = class_score * obj_score;
             if (score > best_score) {
                 best_score = score;
-                best_class = c - 5;
+                best_class = c - class_offset;
                 best_class_score = class_score;
             }
         }
