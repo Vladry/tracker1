@@ -1,5 +1,6 @@
 #include "overlay.h"
 //#include <algorithm>
+#include <cmath>
 #include <deque>
 #include <unordered_map>
 #include <unordered_set>
@@ -63,11 +64,59 @@ static cv::Rect smooth_bbox_for_render(int id, const cv::Rect& current) {
     int w = (int)std::lround(acc.width);
     int h = (int)std::lround(acc.height);
 
-    // Защита от нулевых/отрицательных размеров.
+    // Защита от нулвых/отрицательных размеров.
     if (w < 1) w = 1;
     if (h < 1) h = 1;
 
     return cv::Rect(x, y, w, h);
+}
+
+//------------------------------------------------------------------------------
+// Рисование пунктирной линии
+//------------------------------------------------------------------------------
+static void draw_dashed_line(
+        cv::Mat& frame,
+        const cv::Point& p1,
+        const cv::Point& p2,
+        const cv::Scalar& color,
+        int thickness,
+        int dash_len,
+        int gap_len
+) {
+    const float length = std::hypot(static_cast<float>(p2.x - p1.x),
+                                    static_cast<float>(p2.y - p1.y));
+    if (length <= 1.0f) {
+        return;
+    }
+    const cv::Point2f direction((p2.x - p1.x) / length, (p2.y - p1.y) / length);
+    float dist = 0.0f;
+    while (dist < length) {
+        const float seg_len = std::min(static_cast<float>(dash_len), length - dist);
+        cv::Point start(static_cast<int>(p1.x + direction.x * dist),
+                        static_cast<int>(p1.y + direction.y * dist));
+        cv::Point end(static_cast<int>(p1.x + direction.x * (dist + seg_len)),
+                      static_cast<int>(p1.y + direction.y * (dist + seg_len)));
+        cv::line(frame, start, end, color, thickness, cv::LINE_AA);
+        dist += static_cast<float>(dash_len + gap_len);
+    }
+}
+
+static void draw_dashed_rect(
+        cv::Mat& frame,
+        const cv::Rect& rect,
+        const cv::Scalar& color,
+        int thickness
+) {
+    const int dash_len = 6;
+    const int gap_len = 4;
+    const cv::Point p1(rect.x, rect.y);
+    const cv::Point p2(rect.x + rect.width, rect.y);
+    const cv::Point p3(rect.x + rect.width, rect.y + rect.height);
+    const cv::Point p4(rect.x, rect.y + rect.height);
+    draw_dashed_line(frame, p1, p2, color, thickness, dash_len, gap_len);
+    draw_dashed_line(frame, p2, p3, color, thickness, dash_len, gap_len);
+    draw_dashed_line(frame, p3, p4, color, thickness, dash_len, gap_len);
+    draw_dashed_line(frame, p4, p1, color, thickness, dash_len, gap_len);
 }
 
 //------------------------------------------------------------------------------
@@ -177,8 +226,14 @@ void OverlayRenderer::render(
         // Для отображения используем сглаженный bbox.
         const cv::Rect r = smooth_bbox_for_render(t.id, t.bbox);
 
-        // Рисуем динамический bbox (зелёный, тонкая линия).
-        cv::rectangle(frame, r, cv::Scalar(0, 255, 0), 1);
+        // Рисуем динамический bbox:
+        // - зелёный solid при стабильном трекинге
+        // - зелёный dashed при предсказании (missed_frames > 0)
+        if (t.missed_frames > 0) {
+            draw_dashed_rect(frame, r, cv::Scalar(0, 255, 0), 1);
+        } else {
+            cv::rectangle(frame, r, cv::Scalar(0, 255, 0), 1);
+        }
 
 #ifdef SHOW_DYNAMIC_IDS
         // Опционально подписываем id цели (если включён define).
@@ -203,64 +258,3 @@ void OverlayRenderer::render(
 // Рендер статических (ручных) bbox
 //------------------------------------------------------------------------------
 void OverlayRenderer::render_static_boxes(
-        cv::Mat& frame,
-        const std::vector<static_box>& boxes
-) {
-    for (const auto& sb : boxes) {
-        const cv::Rect r = sb.rect;
-
-        // Выбираем цвет в зависимости от состояния.
-        cv::Scalar color;
-        switch (sb.state) {
-            case static_box_state::attached:
-                // Статический bbox успешно привязан к цели.
-                color = cv::Scalar(0, 0, 255);      // red
-                break;
-            case static_box_state::pending_rebind:
-                // Ожидает перепривязки.
-                color = cv::Scalar(0, 255, 255);    // yellow
-                break;
-            case static_box_state::lost:
-            default:
-                // Потерянный или неизвестный статус.
-                color = cv::Scalar(128, 128, 128);  // gray
-                break;
-        }
-
-        // Рисуем статический bbox (толще, чем динамческий).
-        cv::rectangle(frame, r, color, 3);
-
-#ifdef SHOW_IDS
-        // Опционально подписываем id статического бокса.
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "static id=%d", sb.id);
-        draw_label(frame, cv::Point(r.x + 2, std::max(14, r.y - 2)),
-                   buf, color);
-#endif
-    }
-}
-
-bool OverlayRenderer::load_overlay_config(const toml::table &tbl) {
-    try {
-// ---------------------------- [overlay] ---------------------------
-        const auto *overlay = tbl["overlay"].as_table();
-        if (!overlay) {
-            throw std::runtime_error("missing [overlay] table");
-        }
-        cfg_.hud_alpha = read_required<float>(*overlay, "hud_alpha");
-        cfg_.unselected_alpha_when_selected = read_required<float>(
-                *overlay, "unselected_alpha_when_selected");
-
-// -------------------------- [smoothing] ---------------------------
-        const auto *smoothing = tbl["smoothing"].as_table();
-        if (!smoothing) {
-            throw std::runtime_error("missing [smoothing] table");
-        }
-        cfg_.dynamic_bbox_window = read_required<int>(*smoothing, "dynamic_bbox_window");
-        return true;
-
-    } catch (const std::exception &e) {
-        std::cerr << "overlay config load failed  " << e.what() << std::endl;
-        return false;
-    }
-};

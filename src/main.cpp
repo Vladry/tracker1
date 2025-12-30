@@ -5,16 +5,14 @@
 #include <vector>
 #include "frame_store.h"
 #include "rtsp_worker.h"
-#include "tracker_manager.h"
-#include "static_box_manager.h"
+#include "manual_tracker_manager.h"
 #include "overlay.h"
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include "display_loop.h"
 #include "other_handlers.h"
-#include "detector.h"
 #include "rtsp_watch_dog.h"
-#include "merge_bbox.h"
 
 #define SHOW_IDS = false;
 
@@ -36,9 +34,9 @@ static inline long long now_steady_ms() {
 
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
-static StaticBoxManager *g_static_mgr = nullptr;
-static std::vector<cv::Rect2f> *g_dynamic_boxes = nullptr;
-static std::vector<int> *g_dynamic_ids = nullptr;
+static ManualTrackerManager *g_manual_tracker = nullptr;
+static std::mutex g_last_frame_mutex;
+static cv::Mat g_last_frame;
 
 
 // ===================== MOUSE CALLBACK =====================
@@ -47,15 +45,14 @@ void on_mouse(int event, int x, int y, int, void *) {
     if (event != cv::EVENT_LBUTTONDOWN)
         return;
 
-    if (!g_static_mgr || !g_dynamic_boxes || !g_dynamic_ids)
+    if (!g_manual_tracker)
         return;
 
-    g_static_mgr->on_mouse_click(
-            x,
-            y,
-            *g_dynamic_boxes,
-            *g_dynamic_ids
-    );
+    std::lock_guard<std::mutex> lock(g_last_frame_mutex);
+    if (g_last_frame.empty()) {
+        return;
+    }
+    g_manual_tracker->handle_click(x, y, g_last_frame, now_steady_ms());
 }
 
 
@@ -78,13 +75,11 @@ int main(int argc, char *argv[]) {
     RtspWatchDog rtsp_watchdog;
 
 
-    // получаем конфигурации из config.toml
+    // получаем конфигураци из config.toml
     toml::table tbl = toml::parse_file("config.toml");
     RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
-    Detector detector(tbl);
-    TrackerManager tracker(tbl);
-    MergeBbox merge_bbox(tbl);
+    ManualTrackerManager tracker(tbl);
     OverlayRenderer overlay(tbl);
     rtsp.start();
 
@@ -147,15 +142,7 @@ int main(int argc, char *argv[]) {
         std::cout << "[CTRL] Control thread exit" << std::endl;
     });
 
-    StaticBoxManager static_mgr(tbl);
-
-
-    std::vector<cv::Rect2f> dynamic_boxes;
-    std::vector<int> dynamic_ids;
-
-    g_static_mgr = &static_mgr;
-    g_dynamic_boxes = &dynamic_boxes;
-    g_dynamic_ids = &dynamic_ids;
+    g_manual_tracker = &tracker;
 
 
     std::thread tracker_thread([&]() {
@@ -169,23 +156,14 @@ int main(int argc, char *argv[]) {
             // Кадр получен: обновляем таймер watchdog-а.
             g_last_frame_ms.store(now_steady_ms(), std::memory_order_relaxed);
 
-            auto dets = detector.detect(frame);
-            auto merged = merge_bbox.merge_detections(dets);
-
-            tracker.update(dets);
-//            tracker.update(merged);
-
-            dynamic_boxes.clear();
-            dynamic_ids.clear();
-            for (const auto &t: tracker.targets()) {
-                dynamic_boxes.emplace_back(t.bbox);
-                dynamic_ids.push_back(t.id);
+            {
+                std::lock_guard<std::mutex> lock(g_last_frame_mutex);
+                g_last_frame = frame.clone();
             }
 
-            static_mgr.update(dynamic_boxes, dynamic_ids);
+            tracker.update(frame, now_steady_ms());
 
             overlay.render(frame, tracker.targets(), -1);
-            overlay.render_static_boxes(frame, static_mgr.boxes());
 
             // Публикуем кадр с overlay для UI (отдельный store => нет "саморазгона")
             ui_store.setFrame(std::move(frame));
