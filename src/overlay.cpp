@@ -64,7 +64,7 @@ static cv::Rect smooth_bbox_for_render(int id, const cv::Rect& current) {
     int w = (int)std::lround(acc.width);
     int h = (int)std::lround(acc.height);
 
-    // Защита от нулвых/отрицательных размеров.
+    // Защита от нулевых/отрицательных размеров.
     if (w < 1) w = 1;
     if (h < 1) h = 1;
 
@@ -258,3 +258,64 @@ void OverlayRenderer::render(
 // Рендер статических (ручных) bbox
 //------------------------------------------------------------------------------
 void OverlayRenderer::render_static_boxes(
+        cv::Mat& frame,
+        const std::vector<static_box>& boxes
+) {
+    for (const auto& sb : boxes) {
+        const cv::Rect r = sb.rect;
+
+        // Выбираем цвет в зависимости от состояния.
+        cv::Scalar color;
+        switch (sb.state) {
+            case static_box_state::attached:
+                // Статический bbox успешно привязан к цели.
+                color = cv::Scalar(0, 0, 255);      // red
+                break;
+            case static_box_state::pending_rebind:
+                // Ожидает перепривязки.
+                color = cv::Scalar(0, 255, 255);    // yellow
+                break;
+            case static_box_state::lost:
+            default:
+                // Потерянный или неизвестный статус.
+                color = cv::Scalar(128, 128, 128);  // gray
+                break;
+        }
+
+        // Рисуем статический bbox (толще, чем динамческий).
+        cv::rectangle(frame, r, color, 3);
+
+#ifdef SHOW_IDS
+        // Опционально подписываем id статического бокса.
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "static id=%d", sb.id);
+        draw_label(frame, cv::Point(r.x + 2, std::max(14, r.y - 2)),
+                   buf, color);
+#endif
+    }
+}
+
+bool OverlayRenderer::load_overlay_config(const toml::table &tbl) {
+    try {
+// ---------------------------- [overlay] ---------------------------
+        const auto *overlay = tbl["overlay"].as_table();
+        if (!overlay) {
+            throw std::runtime_error("missing [overlay] table");
+        }
+        cfg_.hud_alpha = read_required<float>(*overlay, "hud_alpha");
+        cfg_.unselected_alpha_when_selected = read_required<float>(
+                *overlay, "unselected_alpha_when_selected");
+
+// -------------------------- [smoothing] ---------------------------
+        const auto *smoothing = tbl["smoothing"].as_table();
+        if (!smoothing) {
+            throw std::runtime_error("missing [smoothing] table");
+        }
+        cfg_.dynamic_bbox_window = read_required<int>(*smoothing, "dynamic_bbox_window");
+        return true;
+
+    } catch (const std::exception &e) {
+        std::cerr << "overlay config load failed  " << e.what() << std::endl;
+        return false;
+    }
+};

@@ -275,7 +275,7 @@ void ManualTrackerManager::update(const cv::Mat& frame, long long now_ms) {
         it->age_frames += 1;
         bool updated = false;
         if (it->tracker) {
-            cv::Rect2d new_box;
+            cv::Rect new_box;
             if (it->tracker->update(frame, new_box)) {
                 it->bbox = clip_rect(cv::Rect2f(new_box), frame.size());
                 it->missed_frames = 0;

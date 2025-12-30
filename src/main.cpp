@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
     RtspWatchDog rtsp_watchdog;
 
 
-    // получаем конфигураци из config.toml
+    // получаем конфигурации из config.toml
     toml::table tbl = toml::parse_file("config.toml");
     RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);

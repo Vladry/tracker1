@@ -28,9 +28,7 @@ if (NOT RKNN_INCLUDE_DIR)
     message(FATAL_ERROR "rknn_api.h not found. Install RKNN headers and/or set RKNN_INCLUDE_DIR.")
 endif ()
 
-add_executable(Five_Threads
-        include/manual_tracker_manager.h
-        src/manual_tracker_manager.cpp)
+add_executable(Five_Threads)
 
 configure_file(
         ${CMAKE_SOURCE_DIR}/config.toml
