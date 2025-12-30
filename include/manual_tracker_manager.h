@@ -14,6 +14,7 @@ public:
         int click_padding = 6;
         int remove_padding = 6;
         int fallback_box_size = 40;
+        float max_area_ratio = 0.1f;
         int floodfill_lo_diff = 20;
         int floodfill_hi_diff = 20;
         int min_area = 200;
@@ -23,6 +24,8 @@ public:
         float match_threshold = 0.7f;
         bool update_template = true;
         int max_lost_ms = 1500;
+        bool auto_reacquire_nearest = true;
+        int reacquire_delay_ms = 2000;
         float kalman_process_noise = 1e-2f;
         float kalman_measurement_noise = 1e-1f;
     };

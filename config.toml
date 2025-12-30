@@ -36,7 +36,7 @@ var_threshold = 16.0
 detect_shadows = false
 
 # Минимальная площадь движения (в пикселях) для ROI.
-min_area = 50
+min_area = 60
 
 # Минимальная ширина/высота ROI, чтобы отбросить шум.
 min_width = 12
@@ -66,6 +66,9 @@ remove_padding = 6
 # Размер квадратного бокса, если flood fill не нашёл явный объект.
 fallback_box_size = 40
 
+# Максимально допустимая доля площади кадра для ROI (0..1).
+max_area_ratio = 0.1
+
 # Допуски flood fill по яркости.
 floodfill_lo_diff = 20
 floodfill_hi_diff = 20
@@ -86,6 +89,12 @@ update_template = true
 
 # Максимальное время (мс) удержания цели при пропаже.
 max_lost_ms = 1500
+
+# Автоматически переназначать цель на ближайший трек, если она потеряна.
+auto_reacquire_nearest = true
+
+# Задержка (мс) до переназначения потерянной цели.
+reacquire_delay_ms = 2000
 
 # Параметры фильтра Калмана.
 kalman_process_noise = 0.01

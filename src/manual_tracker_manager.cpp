@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <string>
 
 namespace {
@@ -33,6 +34,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.click_padding = read_required<int>(*cfg, "click_padding");
         cfg_.remove_padding = read_required<int>(*cfg, "remove_padding");
         cfg_.fallback_box_size = read_required<int>(*cfg, "fallback_box_size");
+        cfg_.max_area_ratio = read_required<float>(*cfg, "max_area_ratio");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
         cfg_.min_area = read_required<int>(*cfg, "min_area");
@@ -42,12 +44,15 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.match_threshold = read_required<float>(*cfg, "match_threshold");
         cfg_.update_template = read_required<bool>(*cfg, "update_template");
         cfg_.max_lost_ms = read_required<int>(*cfg, "max_lost_ms");
+        cfg_.auto_reacquire_nearest = read_required<bool>(*cfg, "auto_reacquire_nearest");
+        cfg_.reacquire_delay_ms = read_required<int>(*cfg, "reacquire_delay_ms");
         cfg_.kalman_process_noise = read_required<float>(*cfg, "kalman_process_noise");
         cfg_.kalman_measurement_noise = read_required<float>(*cfg, "kalman_measurement_noise");
         std::cout << "[MANUAL] config: max_targets=" << cfg_.max_targets
                   << " click_padding=" << cfg_.click_padding
                   << " remove_padding=" << cfg_.remove_padding
                   << " fallback_box_size=" << cfg_.fallback_box_size
+                  << " max_area_ratio=" << cfg_.max_area_ratio
                   << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
                   << " floodfill_hi_diff=" << cfg_.floodfill_hi_diff
                   << " min_area=" << cfg_.min_area
@@ -57,6 +62,8 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " match_threshold=" << cfg_.match_threshold
                   << " update_template=" << (cfg_.update_template ? "true" : "false")
                   << " max_lost_ms=" << cfg_.max_lost_ms
+                  << " auto_reacquire_nearest=" << (cfg_.auto_reacquire_nearest ? "true" : "false")
+                  << " reacquire_delay_ms=" << cfg_.reacquire_delay_ms
                   << " kalman_process_noise=" << cfg_.kalman_process_noise
                   << " kalman_measurement_noise=" << cfg_.kalman_measurement_noise
                   << std::endl;
@@ -124,6 +131,19 @@ cv::Rect2f ManualTrackerManager::build_roi_from_click(const cv::Mat& frame, int 
     roi.y -= cfg_.click_padding;
     roi.width += cfg_.click_padding * 2.0f;
     roi.height += cfg_.click_padding * 2.0f;
+
+    const float max_ratio = std::max(0.0f, std::min(cfg_.max_area_ratio, 1.0f));
+    if (max_ratio > 0.0f) {
+        const float max_area = static_cast<float>(frame.cols * frame.rows) * max_ratio;
+        if (roi.area() > max_area && max_area > 1.0f) {
+            const float scale = std::sqrt(max_area / roi.area());
+            const cv::Point2f center = rect_center(roi);
+            roi.width *= scale;
+            roi.height *= scale;
+            roi.x = center.x - roi.width * 0.5f;
+            roi.y = center.y - roi.height * 0.5f;
+        }
+    }
     return clip_rect(roi, frame.size());
 }
 
@@ -270,6 +290,46 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
 
 void ManualTrackerManager::update(const cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    if (cfg_.auto_reacquire_nearest) {
+        for (auto& track : tracks_) {
+            if (track.missed_frames == 0) {
+                continue;
+            }
+            const long long lost_ms = now_ms - track.last_seen_ms;
+            if (lost_ms < cfg_.reacquire_delay_ms) {
+                continue;
+            }
+
+            float best_dist = std::numeric_limits<float>::max();
+            ManualTrack* best = nullptr;
+            const cv::Point2f lost_center = rect_center(track.bbox);
+            for (auto& candidate : tracks_) {
+                if (candidate.id == track.id || candidate.missed_frames > 0) {
+                    continue;
+                }
+                const cv::Point2f cand_center = rect_center(candidate.bbox);
+                const float dx = lost_center.x - cand_center.x;
+                const float dy = lost_center.y - cand_center.y;
+                const float dist = std::sqrt(dx * dx + dy * dy);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best = &candidate;
+                }
+            }
+
+            if (best) {
+                track.bbox = best->bbox;
+                track.tracker = cv::TrackerCSRT::create();
+                track.tracker->init(frame, track.bbox);
+                track.template_gray = best->template_gray.clone();
+                track.missed_frames = 0;
+                track.predicted = false;
+                track.last_seen_ms = now_ms;
+                correct_kalman(track, rect_center(track.bbox));
+            }
+        }
+    }
 
     for (auto it = tracks_.begin(); it != tracks_.end(); ) {
         it->age_frames += 1;

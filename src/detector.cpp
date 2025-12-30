@@ -294,56 +294,136 @@ std::vector<cv::Rect2f> Detector::detect_rknn(const cv::Mat& frame_bgr) {
 
     cv::Mat resized;
     cv::resize(frame_bgr, resized, cv::Size(resized_w, resized_h));
-
-    cv::Mat input(input_size, frame_bgr.type(), cv::Scalar(0, 0, 0));
-    cv::Rect roi(pad_left, pad_top, resized.cols, resized.rows);
-    resized.copyTo(input(roi));
-
-    cv::Mat input_rgb;
+    cv::copyMakeBorder(resized, resized, pad_top, pad_bottom, pad_left, pad_right,
+                       cv::BORDER_CONSTANT, cv::Scalar(114, 114, 114));
     if (cfg_.rknn_swap_rb) {
-        cv::cvtColor(input, input_rgb, cv::COLOR_BGR2RGB);
-    } else {
-        input_rgb = input;
+        cv::cvtColor(resized, resized, cv::COLOR_BGR2RGB);
     }
 
-    cv::Mat input_float;
-    input_rgb.convertTo(input_float, CV_32F, cfg_.rknn_scale);
+    rknn_input input{};
+    std::vector<uint8_t> input_u8;
+    std::vector<float> input_f32;
 
-    rknn_input inputs[1]{};
-    inputs[0].index = 0;
-    inputs[0].type = RKNN_TENSOR_FLOAT32;
-    inputs[0].fmt = is_nchw(input_attr_) ? RKNN_TENSOR_NCHW : RKNN_TENSOR_NHWC;
-    inputs[0].size = tensor_elem_count(input_attr_) * sizeof(float);
-    inputs[0].buf = input_float.data;
-    if (rknn_inputs_set(rknn_ctx_, 1, inputs) != RKNN_SUCC) {
+    if (input_attr_.type == RKNN_TENSOR_UINT8) {
+        if (is_nchw(input_attr_)) {
+            std::vector<cv::Mat> channels;
+            cv::split(resized, channels);
+            input_u8.resize(static_cast<size_t>(resized.total() * resized.channels()));
+            size_t offset = 0;
+            for (const auto &ch : channels) {
+                const size_t len = static_cast<size_t>(ch.total());
+                std::memcpy(input_u8.data() + offset, ch.data, len);
+                offset += len;
+            }
+            input.buf = input_u8.data();
+            input.size = input_u8.size();
+        } else {
+            input.buf = resized.data;
+            input.size = static_cast<size_t>(resized.total() * resized.elemSize());
+        }
+        input.type = RKNN_TENSOR_UINT8;
+        std::cout << "[DET] input type=UINT8"
+                  << " fmt=" << input_attr_.fmt
+                  << " nchw=" << (is_nchw(input_attr_) ? "true" : "false")
+                  << " size=" << input.size << std::endl;
+    } else {
+        cv::Mat float_img;
+        resized.convertTo(float_img, CV_32F);
+        if (cfg_.rknn_mean != cv::Scalar(0, 0, 0)) {
+            float_img -= cfg_.rknn_mean;
+        }
+        if (cfg_.rknn_scale != 1.0f) {
+            float_img *= cfg_.rknn_scale;
+        }
+
+        if (is_nchw(input_attr_)) {
+            std::vector<cv::Mat> channels;
+            cv::split(float_img, channels);
+            input_f32.resize(static_cast<size_t>(float_img.total() * float_img.channels()));
+            size_t offset = 0;
+            for (const auto &ch : channels) {
+                const size_t len = static_cast<size_t>(ch.total());
+                std::memcpy(input_f32.data() + offset, ch.ptr<float>(), len * sizeof(float));
+                offset += len;
+            }
+            input.buf = input_f32.data();
+            input.size = input_f32.size() * sizeof(float);
+        } else {
+            input.buf = float_img.data;
+            input.size = static_cast<size_t>(float_img.total() * float_img.elemSize());
+        }
+        input.type = RKNN_TENSOR_FLOAT32;
+        std::cout << "[DET] input type=FLOAT32"
+                  << " fmt=" << input_attr_.fmt
+                  << " nchw=" << (is_nchw(input_attr_) ? "true" : "false")
+                  << " size=" << input.size
+                  << " scale=" << cfg_.rknn_scale
+                  << std::endl;
+    }
+
+    input.index = 0;
+    input.fmt = input_attr_.fmt;
+    input.pass_through = 0;
+
+    if (rknn_inputs_set(rknn_ctx_, 1, &input) != RKNN_SUCC) {
         throw std::runtime_error("rknn_inputs_set failed");
     }
-
     if (rknn_run(rknn_ctx_, nullptr) != RKNN_SUCC) {
         throw std::runtime_error("rknn_run failed");
     }
 
-    std::vector<rknn_output> outputs(output_attrs_.size());
-    for (size_t i = 0; i < output_attrs_.size(); ++i) {
-        outputs[i].want_float = 1;
+    const int output_count = static_cast<int>(output_attrs_.size());
+    if (output_count <= 0) {
+        return out;
     }
-    if (rknn_outputs_get(rknn_ctx_, static_cast<uint32_t>(outputs.size()), outputs.data(), nullptr) != RKNN_SUCC) {
+
+    std::vector<rknn_output> outputs(static_cast<size_t>(output_count));
+    for (int i = 0; i < output_count; ++i) {
+        outputs[i].want_float = 1;
+        outputs[i].is_prealloc = 0;
+    }
+
+    if (rknn_outputs_get(rknn_ctx_, output_count, outputs.data(), nullptr) != RKNN_SUCC) {
         throw std::runtime_error("rknn_outputs_get failed");
     }
+    std::cout << "[DET] outputs_get count=" << output_count << std::endl;
 
-    std::vector<cv::Rect2f> results = yolo_postprocess(
-            outputs,
-            output_attrs_,
-            cfg_.rknn_conf_threshold,
-            cfg_.rknn_nms_threshold,
-            cfg_.rknn_class_id,
+    int best_idx = 0;
+    size_t best_count = 0;
+    for (int i = 0; i < output_count; ++i) {
+        const size_t count = tensor_elem_count(output_attrs_[i]);
+        if (count > best_count) {
+            best_count = count;
+            best_idx = i;
+        }
+    }
+
+    const rknn_tensor_attr &out_attr = output_attrs_[best_idx];
+    std::cout << "[DET] best output index=" << best_idx
+              << " dims=" << tensor_dims_to_string(out_attr)
+              << " fmt=" << out_attr.fmt
+              << " type=" << out_attr.type
+              << std::endl;
+
+    std::vector<int> sizes(out_attr.n_dims);
+    for (uint32_t i = 0; i < out_attr.n_dims; ++i) {
+        sizes[i] = static_cast<int>(out_attr.dims[i]);
+    }
+
+    cv::Mat output_mat(out_attr.n_dims, sizes.data(), CV_32F, outputs[best_idx].buf);
+    out = decode_yolov8_output(
+            output_mat,
             input_size,
             frame_bgr.size(),
-            pad_left,
-            pad_top,
-            scale
+            scale,
+            static_cast<float>(pad_left),
+            static_cast<float>(pad_top),
+            cfg_.rknn_conf_threshold,
+            cfg_.rknn_nms_threshold,
+            cfg_.rknn_class_id
     );
 
-    rknn_outputs_release(rknn_ctx_, static_cast<uint32_t>(outputs.size()), outputs.data());
-    return results;
+    rknn_outputs_release(rknn_ctx_, output_count, outputs.data());
+    std::cout << "[DET] detections=" << out.size() << std::endl;
+    return out;
 }
