@@ -22,7 +22,7 @@ namespace {
 
 RtspWorker::RtspWorker(FrameStore& store, toml::table& tbl)
         : store_(store) {
-        load_rtsp_config(tbl);
+    load_rtsp_config(tbl);
 }
 
 RtspWorker::~RtspWorker() {
@@ -74,7 +74,7 @@ void RtspWorker::pokeBus() {
 }
 
 void RtspWorker::threadMain() {
-    if (cfg_.verbose) {
+    if (cfg_.logger_on) {
         std::cerr << "RTSP: worker thread started" << std::endl;
         std::cerr.flush();
     }
@@ -82,7 +82,7 @@ void RtspWorker::threadMain() {
     if (!buildPipeline()) {
         state_.store(State::ERROR, std::memory_order_release);
         running_.store(false, std::memory_order_release);
-        if (cfg_.verbose) {
+        if (cfg_.logger_on) {
             std::cerr << "RTSP: buildPipeline() failed" << std::endl;
             std::cerr.flush();
         }
@@ -100,7 +100,7 @@ void RtspWorker::threadMain() {
         );
 
         if (ret == GST_STATE_CHANGE_FAILURE) {
-            if (cfg_.verbose) {
+            if (cfg_.logger_on) {
                 std::cerr << "RTSP: state change FAILURE on start" << std::endl;
                 std::cerr.flush();
             }
@@ -125,7 +125,7 @@ void RtspWorker::threadMain() {
                 gchar* dbg = nullptr;
                 gst_message_parse_error(msg, &err, &dbg);
 
-                if (cfg_.verbose) {
+                if (cfg_.logger_on) {
                     std::cerr << "RTSP: GST_MESSAGE_ERROR: "
                               << (err ? err->message : "(null)") << std::endl;
                     if (dbg) std::cerr << "RTSP: debug: " << dbg << std::endl;
@@ -141,7 +141,7 @@ void RtspWorker::threadMain() {
             }
 
             case GST_MESSAGE_EOS:
-                if (cfg_.verbose) {
+                if (cfg_.logger_on) {
                     std::cerr << "RTSP: EOS" << std::endl;
                     std::cerr.flush();
                 }
@@ -157,7 +157,7 @@ void RtspWorker::threadMain() {
 
     teardownPipeline();
 
-    if (cfg_.verbose) {
+    if (cfg_.logger_on) {
         std::cerr << "RTSP: worker thread stopped" << std::endl;
         std::cerr.flush();
     }
@@ -175,7 +175,7 @@ bool RtspWorker::buildPipeline() {
     sink_       = gst_element_factory_make("appsink", "sink");
 
     if (!pipeline_ || !src_ || !depay_ || !parse_ || !dec_ || !force_caps_ || !sink_) {
-        if (cfg_.verbose) {
+        if (cfg_.logger_on) {
             std::cerr << "RTSP: failed to create one or more GStreamer elements" << std::endl;
             std::cerr.flush();
         }
@@ -207,7 +207,7 @@ bool RtspWorker::buildPipeline() {
     gst_bin_add_many(GST_BIN(pipeline_), src_, depay_, parse_, dec_, force_caps_, sink_, nullptr);
 
     if (!gst_element_link_many(depay_, parse_, dec_, force_caps_, sink_, nullptr)) {
-        if (cfg_.verbose) {
+        if (cfg_.logger_on) {
             std::cerr << "RTSP: failed to link depay->parse->dec->caps->sink" << std::endl;
             std::cerr.flush();
         }
@@ -284,7 +284,7 @@ GstFlowReturn RtspWorker::onNewSample(GstAppSink* sink, gpointer user_data) {
     gst_sample_unref(sample);
 
     if (!self->gotFirstSample_.exchange(true, std::memory_order_acq_rel)) {
-        if (self->cfg_.verbose) {
+        if (self->cfg_.logger_on) {
             std::cerr << "RTSP: first sample received" << std::endl;
             std::cerr.flush();
         }
@@ -318,7 +318,7 @@ void RtspWorker::onPadAdded(GstElement* src, GstPad* new_pad, gpointer user_data
 
     if (!gst_pad_is_linked(sinkpad)) {
         GstPadLinkReturn ret = gst_pad_link(new_pad, sinkpad);
-        if (self->cfg_.verbose) {
+        if (self->cfg_.logger_on) {
             std::cerr << "RTSP: [pad-added] link result = " << ret << std::endl;
             std::cerr.flush();
         }
@@ -345,6 +345,9 @@ bool RtspWorker::load_rtsp_config(toml::table &tbl) {
         cfg_.timeout_us = read_required<std::uint64_t>(*rtsp, "timeout_us");
         cfg_.tcp_timeout_us = read_required<std::uint64_t>(*rtsp, "tcp_timeout_us");
         cfg_.verbose = read_required<bool>(*rtsp, "verbose");
+        LoggingConfig log_cfg{};
+        load_logging_config(tbl, log_cfg);
+        cfg_.logger_on = log_cfg.rtsp_level_logger_on;
 
 
         return true;

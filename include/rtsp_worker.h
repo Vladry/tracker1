@@ -90,6 +90,7 @@ private:
 
         // Подробные логи в stderr.
         bool verbose = true;
+        bool logger_on = false;
 
     };
 

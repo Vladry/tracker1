@@ -37,6 +37,7 @@ static inline long long now_steady_ms() {
 static ManualTrackerManager *g_manual_tracker = nullptr;
 static std::mutex g_last_frame_mutex;
 static cv::Mat g_last_frame;
+static LoggingConfig g_logging;
 
 
 // ===================== MOUSE CALLBACK =====================
@@ -50,9 +51,16 @@ void on_mouse(int event, int x, int y, int, void *) {
 
     std::lock_guard<std::mutex> lock(g_last_frame_mutex);
     if (g_last_frame.empty()) {
+        if (g_logging.mouse_click_logger) {
+            std::cout << "[MOUSE] click x=" << x << " y=" << y << " ignored empty frame" << std::endl;
+        }
         return;
     }
-    g_manual_tracker->handle_click(x, y, g_last_frame, now_steady_ms());
+    bool handled = g_manual_tracker->handle_click(x, y, g_last_frame, now_steady_ms());
+    if (g_logging.mouse_click_logger) {
+        std::cout << "[MOUSE] click x=" << x << " y=" << y
+                  << " handled=" << (handled ? "true" : "false") << std::endl;
+    }
 }
 
 
@@ -77,6 +85,7 @@ int main(int argc, char *argv[]) {
 
     // получаем конфигурации из config.toml
     toml::table tbl = toml::parse_file("config.toml");
+    load_logging_config(tbl, g_logging);
     RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
     ManualTrackerManager tracker(tbl);
