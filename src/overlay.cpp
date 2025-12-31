@@ -227,10 +227,10 @@ void OverlayRenderer::render(
         const cv::Rect r = smooth_bbox_for_render(t.id, t.bbox);
 
         // Рисуем динамический bbox:
-        // - зелёный solid при стабильном трекинге
-        // - зелёный dashed при предсказании (missed_frames > 0)
+        // - зелёный при стабильном трекинге
+        // - серый при потере (missed_frames > 0)
         if (t.missed_frames > 0) {
-            draw_dashed_rect(frame, r, cv::Scalar(0, 255, 0), 1);
+            cv::rectangle(frame, r, cv::Scalar(128, 128, 128), 1);
         } else {
             cv::rectangle(frame, r, cv::Scalar(0, 255, 0), 1);
         }

@@ -19,6 +19,16 @@ public:
         int motion_search_radius = 30;
         int motion_diff_threshold = 25;
         int click_search_radius = 80;
+        int click_capture_size = 80;
+        int motion_frames = 3;
+        int overlay_ttl_seconds = 3;
+        int tracker_init_padding = 10;
+        int tracker_min_size = 24;
+        float motion_min_magnitude = 0.4f;
+        float motion_angle_tolerance_deg = 20.0f;
+        float motion_mag_tolerance_px = 3.0f;
+        int lost_bbox_ttl_ms = 3000;
+        int reacquire_fallback_max_distance_px = 300;
         bool click_equalize = true;
         bool floodfill_fill_overlay = true;
         int floodfill_lo_diff = 20;
@@ -58,21 +68,35 @@ private:
         bool predicted = false;
         cv::KalmanFilter kf;
         bool kf_ready = false;
+        cv::Point2f predicted_center;
+        bool predicted_center_ready = false;
+    };
+
+    struct PendingClick {
+        cv::Point2i click;
+        cv::Rect roi;
+        long long start_ms = 0;
+        std::vector<cv::Mat> gray_frames;
     };
 
     Config cfg_;
     LoggingConfig log_cfg_;
     std::vector<ManualTrack> tracks_;
     std::vector<Target> targets_;
+    std::vector<PendingClick> pending_clicks_;
     int next_id_ = 1;
     std::mutex mutex_;
     cv::Mat prev_gray_;
     cv::Mat flood_fill_overlay_;
     cv::Mat flood_fill_mask_;
+    long long overlay_expire_ms_ = 0;
 
     bool load_config(const toml::table& tbl);
     cv::Rect2f build_roi_from_click(const cv::Mat& frame, int x, int y);
     cv::Rect2f find_motion_roi(const cv::Mat& frame, int x, int y);
+    cv::Rect2f build_motion_roi_from_sequence(const std::vector<cv::Mat>& frames, const cv::Rect& roi,
+                                              std::vector<cv::Point2f>& motion_points) const;
+    cv::Rect make_click_roi(const cv::Mat& frame, int x, int y) const;
     cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) const;
     void init_kalman(ManualTrack& track, const cv::Point2f& center);
     void predict_kalman(ManualTrack& track);

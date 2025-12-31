@@ -35,6 +35,7 @@ struct LoggingConfig {
     bool rtsp_level_logger_on = false;
     bool manual_detector_level_logger = true;
     bool tracker_level_logger = true;
+    bool reacquire_level_logger = true;
     bool mouse_click_logger = true;
     bool target_object_created_logger = true;
 };
@@ -47,6 +48,7 @@ static inline void load_logging_config(const toml::table& tbl, LoggingConfig& cf
     cfg.rtsp_level_logger_on = read_required<bool>(*logging, "rtsp_level_logger_on");
     cfg.manual_detector_level_logger = read_required<bool>(*logging, "manual_detector_level_logger");
     cfg.tracker_level_logger = read_required<bool>(*logging, "tracker_level_logger");
+    cfg.reacquire_level_logger = read_required<bool>(*logging, "reacquire_level_logger");
     cfg.mouse_click_logger = read_required<bool>(*logging, "mouse_click_logger");
     cfg.target_object_created_logger = read_required<bool>(*logging, "target_object_created_logger");
 }

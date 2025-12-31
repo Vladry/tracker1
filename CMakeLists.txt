@@ -28,19 +28,7 @@ if (NOT RKNN_INCLUDE_DIR)
     message(FATAL_ERROR "rknn_api.h not found. Install RKNN headers and/or set RKNN_INCLUDE_DIR.")
 endif ()
 
-add_executable(Five_Threads)
-
-configure_file(
-        ${CMAKE_SOURCE_DIR}/config.toml
-        ${CMAKE_BINARY_DIR}/config.toml
-        COPYONLY
-)
-
-if (EXISTS "${CMAKE_SOURCE_DIR}/models")
-    file(COPY "${CMAKE_SOURCE_DIR}/models" DESTINATION "${CMAKE_BINARY_DIR}")
-endif ()
-
-target_sources(Five_Threads PRIVATE
+set(FIVE_THREADS_SOURCES
         src/detector.cpp
         src/display_loop.cpp
         src/frame_store.cpp
@@ -55,6 +43,20 @@ target_sources(Five_Threads PRIVATE
         src/merge_bbox.cpp
         src/yolo_postprocess.cpp
 )
+
+add_executable(Five_Threads ${FIVE_THREADS_SOURCES})
+
+target_sources(Five_Threads PRIVATE ${FIVE_THREADS_SOURCES})
+
+configure_file(
+        ${CMAKE_SOURCE_DIR}/config.toml
+        ${CMAKE_BINARY_DIR}/config.toml
+        COPYONLY
+)
+
+if (EXISTS "${CMAKE_SOURCE_DIR}/models")
+    file(COPY "${CMAKE_SOURCE_DIR}/models" DESTINATION "${CMAKE_BINARY_DIR}")
+endif ()
 
 target_include_directories(Five_Threads PRIVATE
         ${GST_INCLUDE_DIRS}

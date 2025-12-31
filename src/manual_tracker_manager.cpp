@@ -4,6 +4,7 @@
 #include <cctype>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <string>
 
 namespace {
@@ -18,6 +19,37 @@ namespace {
                 static_cast<int>(std::round(rect.width)),
                 static_cast<int>(std::round(rect.height))
         );
+    }
+
+    static inline cv::Mat to_gray(const cv::Mat& frame) {
+        if (frame.channels() == 3) {
+            cv::Mat gray;
+            cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+            return gray;
+        }
+        return frame.clone();
+    }
+
+    static inline cv::Rect2f expand_rect(const cv::Rect2f& rect, float pad) {
+        return cv::Rect2f(rect.x - pad, rect.y - pad, rect.width + pad * 2.0f, rect.height + pad * 2.0f);
+    }
+
+    static inline cv::Rect2f ensure_min_size(const cv::Rect2f& rect, float min_size) {
+        if (rect.width >= min_size && rect.height >= min_size) {
+            return rect;
+        }
+        const cv::Point2f center(rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f);
+        const float size = std::max(min_size, std::max(rect.width, rect.height));
+        return cv::Rect2f(center.x - size * 0.5f, center.y - size * 0.5f, size, size);
+    }
+
+    static inline float angle_between(float a, float b) {
+        constexpr float kPi = 3.14159265f;
+        float diff = std::fabs(a - b);
+        if (diff > kPi) {
+            diff = 2.0f * kPi - diff;
+        }
+        return diff;
     }
 }
 
@@ -40,6 +72,16 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.motion_search_radius = read_required<int>(*cfg, "motion_search_radius");
         cfg_.motion_diff_threshold = read_required<int>(*cfg, "motion_diff_threshold");
         cfg_.click_search_radius = read_required<int>(*cfg, "click_search_radius");
+        cfg_.click_capture_size = read_required<int>(*cfg, "click_capture_size");
+        cfg_.motion_frames = read_required<int>(*cfg, "motion_frames");
+        cfg_.overlay_ttl_seconds = read_required<int>(*cfg, "overlay_ttl_seconds");
+        cfg_.tracker_init_padding = read_required<int>(*cfg, "tracker_init_padding");
+        cfg_.tracker_min_size = read_required<int>(*cfg, "tracker_min_size");
+        cfg_.motion_min_magnitude = read_required<float>(*cfg, "motion_min_magnitude");
+        cfg_.motion_angle_tolerance_deg = read_required<float>(*cfg, "motion_angle_tolerance_deg");
+        cfg_.motion_mag_tolerance_px = read_required<float>(*cfg, "motion_mag_tolerance_px");
+        cfg_.lost_bbox_ttl_ms = read_required<int>(*cfg, "lost_bbox_ttl_ms");
+        cfg_.reacquire_fallback_max_distance_px = read_required<int>(*cfg, "reacquire_fallback_max_distance_px");
         cfg_.click_equalize = read_required<bool>(*cfg, "click_equalize");
         cfg_.floodfill_fill_overlay = read_required<bool>(*cfg, "floodfill_fill_overlay");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
@@ -65,6 +107,16 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " motion_search_radius=" << cfg_.motion_search_radius
                   << " motion_diff_threshold=" << cfg_.motion_diff_threshold
                   << " click_search_radius=" << cfg_.click_search_radius
+                  << " click_capture_size=" << cfg_.click_capture_size
+                  << " motion_frames=" << cfg_.motion_frames
+                  << " overlay_ttl_seconds=" << cfg_.overlay_ttl_seconds
+                  << " tracker_init_padding=" << cfg_.tracker_init_padding
+                  << " tracker_min_size=" << cfg_.tracker_min_size
+                  << " motion_min_magnitude=" << cfg_.motion_min_magnitude
+                  << " motion_angle_tolerance_deg=" << cfg_.motion_angle_tolerance_deg
+                  << " motion_mag_tolerance_px=" << cfg_.motion_mag_tolerance_px
+                  << " lost_bbox_ttl_ms=" << cfg_.lost_bbox_ttl_ms
+                  << " reacquire_fallback_max_distance_px=" << cfg_.reacquire_fallback_max_distance_px
                   << " click_equalize=" << (cfg_.click_equalize ? "true" : "false")
                   << " floodfill_fill_overlay=" << (cfg_.floodfill_fill_overlay ? "true" : "false")
                   << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
@@ -193,6 +245,22 @@ cv::Rect2f ManualTrackerManager::build_roi_from_click(const cv::Mat& frame, int 
     return clip_rect(roi, frame.size());
 }
 
+cv::Rect ManualTrackerManager::make_click_roi(const cv::Mat& frame, int x, int y) const {
+    if (frame.empty()) {
+        return {};
+    }
+    const int size = std::max(2, cfg_.click_capture_size);
+    const int half = size / 2;
+    const int x1 = std::max(0, x - half);
+    const int y1 = std::max(0, y - half);
+    const int x2 = std::min(frame.cols, x + half);
+    const int y2 = std::min(frame.rows, y + half);
+    if (x2 <= x1 || y2 <= y1) {
+        return {};
+    }
+    return {x1, y1, x2 - x1, y2 - y1};
+}
+
 cv::Rect2f ManualTrackerManager::find_motion_roi(const cv::Mat& frame, int x, int y) {
     if (prev_gray_.empty() || frame.empty()) {
         return {};
@@ -254,6 +322,154 @@ cv::Rect2f ManualTrackerManager::find_motion_roi(const cv::Mat& frame, int x, in
     return clip_rect(cv::Rect2f(best_rect), frame.size());
 }
 
+cv::Rect2f ManualTrackerManager::build_motion_roi_from_sequence(
+        const std::vector<cv::Mat>& frames,
+        const cv::Rect& roi,
+        std::vector<cv::Point2f>& motion_points) const {
+    motion_points.clear();
+    if (frames.size() < 2 || roi.width <= 0 || roi.height <= 0) {
+        return {};
+    }
+
+    constexpr int kMaxFeatures = 400;
+    constexpr float kQuality = 0.01f;
+    constexpr float kMinDistance = 3.0f;
+    const float kAngleTolDeg = std::max(1.0f, cfg_.motion_angle_tolerance_deg);
+    const float kMagTolPx = std::max(0.1f, cfg_.motion_mag_tolerance_px);
+    const float kMinMotionPx = std::max(0.05f, cfg_.motion_min_magnitude);
+    constexpr float kAngleBinDeg = 10.0f;
+    constexpr float kMagBinPx = 2.0f;
+
+    constexpr float kPi = 3.14159265f;
+    const float angle_tol = kAngleTolDeg * kPi / 180.0f;
+    const float angle_bin = kAngleBinDeg * kPi / 180.0f;
+
+    const cv::Mat& base = frames.front();
+    cv::Mat roi_gray = base(roi);
+
+    std::vector<cv::Point2f> points;
+    cv::goodFeaturesToTrack(roi_gray, points, kMaxFeatures, kQuality, kMinDistance);
+    if (points.empty()) {
+        return {};
+    }
+    for (auto& p : points) {
+        p.x += static_cast<float>(roi.x);
+        p.y += static_cast<float>(roi.y);
+    }
+
+    const int steps = static_cast<int>(frames.size()) - 1;
+    std::vector<cv::Point2f> prev_points = points;
+    std::vector<cv::Point2f> curr_points;
+    std::vector<std::vector<cv::Point2f>> step_vectors(points.size());
+    std::vector<bool> valid(points.size(), true);
+
+    for (size_t i = 1; i < frames.size(); ++i) {
+        std::vector<unsigned char> status;
+        std::vector<float> err;
+        cv::calcOpticalFlowPyrLK(frames[i - 1], frames[i], prev_points, curr_points, status, err);
+        for (size_t idx = 0; idx < points.size(); ++idx) {
+            if (!valid[idx]) {
+                continue;
+            }
+            if (idx >= status.size() || status[idx] == 0) {
+                valid[idx] = false;
+                continue;
+            }
+            cv::Point2f step = curr_points[idx] - prev_points[idx];
+            step_vectors[idx].push_back(step);
+        }
+        prev_points = curr_points;
+    }
+
+    struct MotionCandidate {
+        cv::Point2f last_pos;
+        cv::Point2f mean_step;
+    };
+
+    std::vector<MotionCandidate> candidates;
+    candidates.reserve(points.size());
+    for (size_t idx = 0; idx < points.size(); ++idx) {
+        if (!valid[idx] || static_cast<int>(step_vectors[idx].size()) != steps) {
+            continue;
+        }
+        cv::Point2f sum(0.0f, 0.0f);
+        for (const auto& step : step_vectors[idx]) {
+            sum += step;
+        }
+        cv::Point2f mean(sum.x / static_cast<float>(steps),
+                         sum.y / static_cast<float>(steps));
+        const float mean_mag = std::sqrt(mean.x * mean.x + mean.y * mean.y);
+        if (mean_mag < kMinMotionPx) {
+            continue;
+        }
+        const float mean_angle = std::atan2(mean.y, mean.x);
+        bool ok = true;
+        for (const auto& step : step_vectors[idx]) {
+            const float mag = std::sqrt(step.x * step.x + step.y * step.y);
+            if (mag < kMinMotionPx * 0.25f) {
+                ok = false;
+                break;
+            }
+            const float angle = std::atan2(step.y, step.x);
+            if (angle_between(angle, mean_angle) > angle_tol) {
+                ok = false;
+                break;
+            }
+            if (std::fabs(mag - mean_mag) > kMagTolPx) {
+                ok = false;
+                break;
+            }
+        }
+        if (!ok) {
+            continue;
+        }
+        candidates.push_back({prev_points[idx], mean});
+    }
+
+    if (candidates.empty()) {
+        return {};
+    }
+
+    std::map<std::pair<int, int>, int> bins;
+    int best_count = 0;
+    std::pair<int, int> best_bin{0, 0};
+    for (const auto& cand : candidates) {
+        const float angle = std::atan2(cand.mean_step.y, cand.mean_step.x);
+        const float mag = std::sqrt(cand.mean_step.x * cand.mean_step.x +
+                                    cand.mean_step.y * cand.mean_step.y);
+        const int angle_key = static_cast<int>(std::round(angle / angle_bin));
+        const int mag_key = static_cast<int>(std::round(mag / kMagBinPx));
+        const std::pair<int, int> key{angle_key, mag_key};
+        const int count = ++bins[key];
+        if (count > best_count) {
+            best_count = count;
+            best_bin = key;
+        }
+    }
+
+    const float best_angle = static_cast<float>(best_bin.first) * angle_bin;
+    const float best_mag = static_cast<float>(best_bin.second) * kMagBinPx;
+    std::vector<cv::Point2f> selected;
+    selected.reserve(candidates.size());
+    for (const auto& cand : candidates) {
+        const float angle = std::atan2(cand.mean_step.y, cand.mean_step.x);
+        const float mag = std::sqrt(cand.mean_step.x * cand.mean_step.x +
+                                    cand.mean_step.y * cand.mean_step.y);
+        if (angle_between(angle, best_angle) <= angle_tol &&
+            std::fabs(mag - best_mag) <= kMagTolPx) {
+            selected.push_back(cand.last_pos);
+        }
+    }
+
+    if (selected.empty()) {
+        return {};
+    }
+
+    motion_points = selected;
+    cv::Rect rect = cv::boundingRect(selected);
+    return clip_rect(cv::Rect2f(rect), base.size());
+}
+
 void ManualTrackerManager::init_kalman(ManualTrack& track, const cv::Point2f& center) {
     track.kf = cv::KalmanFilter(4, 2, 0, CV_32F);
     track.kf.transitionMatrix = (cv::Mat_<float>(4, 4) <<
@@ -278,8 +494,8 @@ void ManualTrackerManager::predict_kalman(ManualTrack& track) {
     cv::Mat prediction = track.kf.predict();
     float px = prediction.at<float>(0);
     float py = prediction.at<float>(1);
-    track.bbox.x = px - track.bbox.width * 0.5f;
-    track.bbox.y = py - track.bbox.height * 0.5f;
+    track.predicted_center = cv::Point2f(px, py);
+    track.predicted_center_ready = true;
 }
 
 void ManualTrackerManager::correct_kalman(ManualTrack& track, const cv::Point2f& center) {
@@ -314,6 +530,9 @@ bool ManualTrackerManager::try_reacquire_with_template(ManualTrack& track, const
     }
 
     cv::Point2f center = rect_center(track.bbox);
+    if (track.predicted_center_ready) {
+        center = track.predicted_center;
+    }
     int x1 = std::max(0, static_cast<int>(center.x) - cfg_.search_radius);
     int y1 = std::max(0, static_cast<int>(center.y) - cfg_.search_radius);
     int x2 = std::min(gray.cols, static_cast<int>(center.x) + cfg_.search_radius);
@@ -338,6 +557,10 @@ bool ManualTrackerManager::try_reacquire_with_template(ManualTrack& track, const
     cv::minMaxLoc(result, &min_val, &max_val, &min_loc, &max_loc);
 
     if (max_val < cfg_.match_threshold) {
+        if (log_cfg_.reacquire_level_logger) {
+            std::cout << "[TRK] priority1 (kalman) template miss id=" << track.id
+                      << " score=" << max_val << std::endl;
+        }
         return false;
     }
 
@@ -355,13 +578,15 @@ bool ManualTrackerManager::try_reacquire_with_template(ManualTrack& track, const
     track.tracker->init(frame, track.bbox);
     track.predicted = false;
     track.missed_frames = 0;
+    track.predicted_center_ready = false;
     correct_kalman(track, rect_center(track.bbox));
     if (cfg_.update_template) {
         track.template_gray = gray(to_int_rect(track.bbox)).clone();
     }
     track.logged_reacquire_ready = false;
-    if (log_cfg_.tracker_level_logger) {
-        std::cout << "[TRK] reacquire by template id=" << track.id << std::endl;
+    if (log_cfg_.reacquire_level_logger) {
+        std::cout << "[TRK] priority1 (kalman) template reacquire id=" << track.id
+                  << " score=" << max_val << std::endl;
     }
     return true;
 }
@@ -401,61 +626,130 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
         return false;
     }
 
-    cv::Rect2f roi = find_motion_roi(frame, x, y);
-    bool is_dynamic = roi.area() > 1.0f;
-    if (roi.area() <= 1.0f) {
-        roi = build_roi_from_click(frame, x, y);
-    }
-    if (roi.area() <= 1.0f) {
+    if (frame.empty()) {
         return false;
     }
-    const float contrast = compute_contrast(frame, roi);
+
+    cv::Rect roi = make_click_roi(frame, x, y);
+    if (roi.area() <= 0) {
+        return false;
+    }
+
+    PendingClick pending;
+    pending.click = {x, y};
+    pending.roi = roi;
+    pending.start_ms = now_ms;
+    pending.gray_frames.push_back(to_gray(frame));
+    pending_clicks_.push_back(std::move(pending));
     if (log_cfg_.manual_detector_level_logger) {
-        if (is_dynamic) {
-            std::cout << "[MANUAL] capture dynamic click id=" << next_id_
-                      << " contrast=" << contrast << std::endl;
-        } else {
-            std::cout << "[MANUAL] capture static click id=" << next_id_
-                      << " contrast=" << contrast << std::endl;
-        }
-    }
-
-    ManualTrack track;
-    track.id = next_id_++;
-    track.bbox = roi;
-    track.is_dynamic = is_dynamic;
-    track.tracker = create_tracker();
-    track.tracker->init(frame, roi);
-
-    cv::Mat gray;
-    if (frame.channels() == 3) {
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-    } else {
-        gray = frame;
-    }
-    track.template_gray = gray(to_int_rect(roi)).clone();
-
-    track.last_seen_ms = now_ms;
-    track.missed_frames = 0;
-    track.predicted = false;
-    init_kalman(track, rect_center(track.bbox));
-
-    tracks_.push_back(std::move(track));
-    refresh_targets();
-    if (log_cfg_.tracker_level_logger) {
-        std::cout << "[TRK] start "
-                  << (is_dynamic ? "dynamic" : "static")
-                  << " id=" << (next_id_ - 1) << std::endl;
-    }
-    if (log_cfg_.target_object_created_logger) {
-        std::cout << "[MANUAL] target object created id=" << (next_id_ - 1)
-                  << " contrast=" << contrast << std::endl;
+        std::cout << "[MANUAL] pending motion click id=" << next_id_
+                  << " roi=" << roi.width << "x" << roi.height << std::endl;
     }
     return true;
 }
 
 void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    if (!pending_clicks_.empty() && !frame.empty()) {
+        cv::Mat gray = to_gray(frame);
+        for (auto it = pending_clicks_.begin(); it != pending_clicks_.end(); ) {
+            it->gray_frames.push_back(gray);
+            const int required = std::max(1, cfg_.motion_frames) + 1;
+            if (static_cast<int>(it->gray_frames.size()) < required) {
+                ++it;
+                continue;
+            }
+
+            if (static_cast<int>(tracks_.size()) >= cfg_.max_targets) {
+                it = pending_clicks_.erase(it);
+                continue;
+            }
+
+            std::vector<cv::Point2f> motion_points;
+            cv::Rect2f roi = build_motion_roi_from_sequence(it->gray_frames, it->roi, motion_points);
+            if (roi.area() > 1.0f) {
+                roi.x -= cfg_.click_padding;
+                roi.y -= cfg_.click_padding;
+                roi.width += cfg_.click_padding * 2.0f;
+                roi.height += cfg_.click_padding * 2.0f;
+                roi = clip_rect(roi, frame.size());
+            }
+
+            if (roi.area() > 1.0f &&
+                roi.area() >= static_cast<float>(cfg_.min_area) &&
+                roi.width >= cfg_.min_width &&
+                roi.height >= cfg_.min_height) {
+                cv::Rect2f tracker_roi = roi;
+                tracker_roi = expand_rect(tracker_roi, static_cast<float>(cfg_.tracker_init_padding));
+                tracker_roi = ensure_min_size(tracker_roi, static_cast<float>(cfg_.tracker_min_size));
+                tracker_roi = clip_rect(tracker_roi, frame.size());
+                if (tracker_roi.area() <= 1.0f) {
+                    it = pending_clicks_.erase(it);
+                    continue;
+                }
+
+                const float contrast = compute_contrast(frame, tracker_roi);
+                if (log_cfg_.manual_detector_level_logger) {
+                    std::cout << "[MANUAL] capture dynamic click id=" << next_id_
+                              << " contrast=" << contrast << std::endl;
+                }
+
+                ManualTrack track;
+                track.id = next_id_++;
+                track.bbox = tracker_roi;
+                track.is_dynamic = true;
+                track.tracker = create_tracker();
+                track.tracker->init(frame, track.bbox);
+                track.template_gray = gray(to_int_rect(track.bbox)).clone();
+                track.last_seen_ms = now_ms;
+                track.missed_frames = 0;
+                track.predicted = false;
+                track.predicted_center_ready = false;
+                init_kalman(track, rect_center(track.bbox));
+
+                tracks_.push_back(std::move(track));
+                refresh_targets();
+
+                if (cfg_.floodfill_fill_overlay) {
+                    flood_fill_mask_ = cv::Mat::zeros(frame.size(), CV_8UC1);
+                    flood_fill_overlay_ = cv::Mat::zeros(frame.size(), frame.type());
+                    if (motion_points.size() >= 3) {
+                        std::vector<cv::Point2f> hull;
+                        cv::convexHull(motion_points, hull, true);
+                        std::vector<cv::Point> hull_int;
+                        hull_int.reserve(hull.size());
+                        for (const auto& pt : hull) {
+                            hull_int.emplace_back(static_cast<int>(std::round(pt.x)),
+                                                  static_cast<int>(std::round(pt.y)));
+                        }
+                        if (hull_int.size() >= 3) {
+                            cv::fillConvexPoly(flood_fill_mask_, hull_int, cv::Scalar(255), cv::LINE_AA);
+                        }
+                    } else {
+                        cv::Rect overlay_rect = to_int_rect(roi);
+                        overlay_rect &= cv::Rect(0, 0, frame.cols, frame.rows);
+                        if (overlay_rect.area() > 0) {
+                            flood_fill_mask_(overlay_rect).setTo(255);
+                        }
+                    }
+                    flood_fill_overlay_.setTo(cv::Scalar(0, 0, 255), flood_fill_mask_);
+                    overlay_expire_ms_ = now_ms + static_cast<long long>(cfg_.overlay_ttl_seconds) * 1000;
+                }
+
+                if (log_cfg_.tracker_level_logger) {
+                    std::cout << "[TRK] start dynamic id=" << (next_id_ - 1) << std::endl;
+                }
+                if (log_cfg_.target_object_created_logger) {
+                    std::cout << "[MANUAL] target object created id=" << (next_id_ - 1)
+                              << " contrast=" << contrast << std::endl;
+                }
+            } else if (log_cfg_.manual_detector_level_logger) {
+                std::cout << "[MANUAL] motion click ignored (static) id=" << next_id_ << std::endl;
+            }
+            it = pending_clicks_.erase(it);
+        }
+    }
 
     if (cfg_.auto_reacquire_nearest) {
         for (auto& track : tracks_) {
@@ -466,8 +760,8 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             if (lost_ms < cfg_.reacquire_delay_ms) {
                 continue;
             }
-            if (log_cfg_.tracker_level_logger && !track.logged_reacquire_ready) {
-                std::cout << "[TRK] reacquire ready id=" << track.id << std::endl;
+            if (log_cfg_.reacquire_level_logger && !track.logged_reacquire_ready) {
+                std::cout << "[TRK] priority1 (kalman wait) ready id=" << track.id << std::endl;
                 track.logged_reacquire_ready = true;
             }
 
@@ -498,9 +792,29 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 track.last_seen_ms = now_ms;
                 correct_kalman(track, rect_center(track.bbox));
                 track.logged_reacquire_ready = false;
-                if (log_cfg_.tracker_level_logger) {
-                    std::cout << "[TRK] reacquire nearest id=" << track.id << std::endl;
+                if (log_cfg_.reacquire_level_logger) {
+                    std::cout << "[TRK] priority2 (nearest) reacquired id=" << track.id
+                              << " dist=" << best_dist << std::endl;
                 }
+                continue;
+            }
+
+            if (best && best_dist <= static_cast<float>(cfg_.reacquire_fallback_max_distance_px)) {
+                track.bbox = best->bbox;
+                track.tracker = create_tracker();
+                track.tracker->init(frame, track.bbox);
+                track.template_gray = best->template_gray.clone();
+                track.missed_frames = 0;
+                track.predicted = false;
+                track.last_seen_ms = now_ms;
+                correct_kalman(track, rect_center(track.bbox));
+                track.logged_reacquire_ready = false;
+                if (log_cfg_.reacquire_level_logger) {
+                    std::cout << "[TRK] priority3 (fallback) reacquired id=" << track.id
+                              << " dist=" << best_dist << std::endl;
+                }
+            } else if (log_cfg_.reacquire_level_logger) {
+                std::cout << "[TRK] priority3 (fallback) no candidates id=" << track.id << std::endl;
             }
         }
     }
@@ -514,6 +828,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 it->bbox = clip_rect(cv::Rect2f(new_box), frame.size());
                 it->missed_frames = 0;
                 it->predicted = false;
+                it->predicted_center_ready = false;
                 it->last_seen_ms = now_ms;
                 it->logged_reacquire_ready = false;
                 correct_kalman(*it, rect_center(it->bbox));
@@ -537,7 +852,8 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             try_reacquire_with_template(*it, frame);
         }
 
-        if (now_ms - it->last_seen_ms > cfg_.max_lost_ms) {
+        const long long lost_ttl_ms = cfg_.lost_bbox_ttl_ms > 0 ? cfg_.lost_bbox_ttl_ms : cfg_.max_lost_ms;
+        if (now_ms - it->last_seen_ms > lost_ttl_ms) {
             if (log_cfg_.tracker_level_logger) {
                 std::cout << "[TRK] lost "
                           << (it->is_dynamic ? "dynamic" : "static")
@@ -553,6 +869,11 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 
     if (frame.empty()) {
         return;
+    }
+    if (overlay_expire_ms_ > 0 && now_ms >= overlay_expire_ms_) {
+        flood_fill_overlay_.release();
+        flood_fill_mask_.release();
+        overlay_expire_ms_ = 0;
     }
     if (cfg_.floodfill_fill_overlay && !flood_fill_overlay_.empty() && !flood_fill_mask_.empty()) {
         cv::Mat blended;
