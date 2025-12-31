@@ -37,6 +37,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.max_area_ratio = read_required<float>(*cfg, "max_area_ratio");
         cfg_.motion_search_radius = read_required<int>(*cfg, "motion_search_radius");
         cfg_.motion_diff_threshold = read_required<int>(*cfg, "motion_diff_threshold");
+        cfg_.click_search_radius = read_required<int>(*cfg, "click_search_radius");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
         cfg_.min_area = read_required<int>(*cfg, "min_area");
@@ -48,6 +49,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.max_lost_ms = read_required<int>(*cfg, "max_lost_ms");
         cfg_.auto_reacquire_nearest = read_required<bool>(*cfg, "auto_reacquire_nearest");
         cfg_.reacquire_delay_ms = read_required<int>(*cfg, "reacquire_delay_ms");
+        cfg_.reacquire_max_distance_px = read_required<int>(*cfg, "reacquire_max_distance_px");
         cfg_.kalman_process_noise = read_required<float>(*cfg, "kalman_process_noise");
         cfg_.kalman_measurement_noise = read_required<float>(*cfg, "kalman_measurement_noise");
         std::cout << "[MANUAL] config: max_targets=" << cfg_.max_targets
@@ -57,6 +59,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " max_area_ratio=" << cfg_.max_area_ratio
                   << " motion_search_radius=" << cfg_.motion_search_radius
                   << " motion_diff_threshold=" << cfg_.motion_diff_threshold
+                  << " click_search_radius=" << cfg_.click_search_radius
                   << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
                   << " floodfill_hi_diff=" << cfg_.floodfill_hi_diff
                   << " min_area=" << cfg_.min_area
@@ -68,6 +71,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " max_lost_ms=" << cfg_.max_lost_ms
                   << " auto_reacquire_nearest=" << (cfg_.auto_reacquire_nearest ? "true" : "false")
                   << " reacquire_delay_ms=" << cfg_.reacquire_delay_ms
+                  << " reacquire_max_distance_px=" << cfg_.reacquire_max_distance_px
                   << " kalman_process_noise=" << cfg_.kalman_process_noise
                   << " kalman_measurement_noise=" << cfg_.kalman_measurement_noise
                   << std::endl;
@@ -109,16 +113,29 @@ cv::Rect2f ManualTrackerManager::build_roi_from_click(const cv::Mat& frame, int 
         gray = frame;
     }
 
-    cv::Mat mask(gray.rows + 2, gray.cols + 2, CV_8UC1, cv::Scalar(0));
+    const int search_radius = std::max(1, cfg_.click_search_radius);
+    const int x1 = std::max(0, x - search_radius);
+    const int y1 = std::max(0, y - search_radius);
+    const int x2 = std::min(gray.cols, x + search_radius);
+    const int y2 = std::min(gray.rows, y + search_radius);
+
+    cv::Rect search_rect(x1, y1, x2 - x1, y2 - y1);
+    if (search_rect.width <= 0 || search_rect.height <= 0) {
+        return {};
+    }
+
+    cv::Mat search = gray(search_rect);
+    cv::Mat mask(search.rows + 2, search.cols + 2, CV_8UC1, cv::Scalar(0));
     cv::Rect bounding;
     const int flags = 4 | cv::FLOODFILL_MASK_ONLY | (255 << 8);
     const cv::Scalar lo(cfg_.floodfill_lo_diff);
     const cv::Scalar hi(cfg_.floodfill_hi_diff);
 
-    cv::floodFill(gray, mask, cv::Point(x, y), cv::Scalar(255), &bounding, lo, hi, flags);
+    cv::floodFill(search, mask, cv::Point(x - search_rect.x, y - search_rect.y),
+                  cv::Scalar(255), &bounding, lo, hi, flags);
 
-    cv::Rect2f roi(static_cast<float>(bounding.x),
-                   static_cast<float>(bounding.y),
+    cv::Rect2f roi(static_cast<float>(bounding.x + search_rect.x),
+                   static_cast<float>(bounding.y + search_rect.y),
                    static_cast<float>(bounding.width),
                    static_cast<float>(bounding.height));
 
@@ -147,6 +164,12 @@ cv::Rect2f ManualTrackerManager::build_roi_from_click(const cv::Mat& frame, int 
             roi.x = center.x - roi.width * 0.5f;
             roi.y = center.y - roi.height * 0.5f;
         }
+    }
+    if (!roi.contains(cv::Point2f(static_cast<float>(x), static_cast<float>(y)))) {
+        const float half = static_cast<float>(cfg_.fallback_box_size) * 0.5f;
+        roi = cv::Rect2f(static_cast<float>(x) - half, static_cast<float>(y) - half,
+                         static_cast<float>(cfg_.fallback_box_size),
+                         static_cast<float>(cfg_.fallback_box_size));
     }
     return clip_rect(roi, frame.size());
 }
@@ -386,7 +409,7 @@ void ManualTrackerManager::update(const cv::Mat& frame, long long now_ms) {
                 }
             }
 
-            if (best) {
+            if (best && best_dist <= static_cast<float>(cfg_.reacquire_max_distance_px)) {
                 track.bbox = best->bbox;
                 track.tracker = cv::TrackerCSRT::create();
                 track.tracker->init(frame, track.bbox);

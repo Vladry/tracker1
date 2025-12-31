@@ -17,6 +17,7 @@ public:
         float max_area_ratio = 0.1f;
         int motion_search_radius = 30;
         int motion_diff_threshold = 25;
+        int click_search_radius = 80;
         int floodfill_lo_diff = 20;
         int floodfill_hi_diff = 20;
         int min_area = 200;
@@ -28,6 +29,7 @@ public:
         int max_lost_ms = 1500;
         bool auto_reacquire_nearest = true;
         int reacquire_delay_ms = 2000;
+        int reacquire_max_distance_px = 120;
         float kalman_process_noise = 1e-2f;
         float kalman_measurement_noise = 1e-1f;
     };
