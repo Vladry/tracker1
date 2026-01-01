@@ -31,6 +31,8 @@ public:
         int tracker_motion_grace_frames = 3;
         int lost_bbox_ttl_ms = 3000;
         int reacquire_fallback_max_distance_px = 300;
+        int reacquire_kalman_radius_px = 120;
+        int reacquire_near_radius_px = 200;
         bool click_equalize = true;
         bool floodfill_fill_overlay = true;
         int floodfill_lo_diff = 20;
@@ -73,6 +75,10 @@ private:
         cv::Point2f predicted_center;
         bool predicted_center_ready = false;
         int stale_frames = 0;
+        long long lost_since_ms = 0;
+        cv::Rect reacquire_roi;
+        std::vector<cv::Mat> reacquire_gray_frames;
+        int reacquire_stage = 0;
     };
 
     struct PendingClick {
@@ -102,6 +108,12 @@ private:
     cv::Rect2f build_motion_roi_from_diff(const std::vector<cv::Mat>& frames, const cv::Rect& roi) const;
     cv::Rect make_click_roi(const cv::Mat& frame, int x, int y) const;
     cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) const;
+    cv::Rect make_centered_roi(const cv::Point2f& center, int size, const cv::Size& frame_size) const;
+    std::vector<cv::Rect> find_motion_clusters(const cv::Mat& current_gray,
+                                               const cv::Mat& prev_gray,
+                                               const cv::Rect& search_rect) const;
+    bool try_reacquire_with_motion(ManualTrack& track, const cv::Mat& gray, const cv::Mat& frame,
+                                   long long now_ms, int stage, const cv::Rect& roi, const char* log_label);
     void init_kalman(ManualTrack& track, const cv::Point2f& center);
     void predict_kalman(ManualTrack& track);
     void correct_kalman(ManualTrack& track, const cv::Point2f& center);

@@ -51,6 +51,11 @@ namespace {
         }
         return diff;
     }
+
+    constexpr int kReacquireNone = 0;
+    constexpr int kReacquirePriority1 = 1;
+    constexpr int kReacquirePriority2 = 2;
+    constexpr int kReacquirePriority3 = 3;
 }
 
 ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {
@@ -84,6 +89,8 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.tracker_motion_grace_frames = read_required<int>(*cfg, "tracker_motion_grace_frames");
         cfg_.lost_bbox_ttl_ms = read_required<int>(*cfg, "lost_bbox_ttl_ms");
         cfg_.reacquire_fallback_max_distance_px = read_required<int>(*cfg, "reacquire_fallback_max_distance_px");
+        cfg_.reacquire_kalman_radius_px = read_required<int>(*cfg, "reacquire_kalman_radius_px");
+        cfg_.reacquire_near_radius_px = read_required<int>(*cfg, "reacquire_near_radius_px");
         cfg_.click_equalize = read_required<bool>(*cfg, "click_equalize");
         cfg_.floodfill_fill_overlay = read_required<bool>(*cfg, "floodfill_fill_overlay");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
@@ -121,6 +128,8 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " tracker_motion_grace_frames=" << cfg_.tracker_motion_grace_frames
                   << " lost_bbox_ttl_ms=" << cfg_.lost_bbox_ttl_ms
                   << " reacquire_fallback_max_distance_px=" << cfg_.reacquire_fallback_max_distance_px
+                  << " reacquire_kalman_radius_px=" << cfg_.reacquire_kalman_radius_px
+                  << " reacquire_near_radius_px=" << cfg_.reacquire_near_radius_px
                   << " click_equalize=" << (cfg_.click_equalize ? "true" : "false")
                   << " floodfill_fill_overlay=" << (cfg_.floodfill_fill_overlay ? "true" : "false")
                   << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
@@ -155,6 +164,132 @@ cv::Rect2f ManualTrackerManager::clip_rect(const cv::Rect2f& rect, const cv::Siz
         return {};
     }
     return {x1, y1, x2 - x1, y2 - y1};
+}
+
+cv::Rect ManualTrackerManager::make_centered_roi(const cv::Point2f& center, int size, const cv::Size& frame_size) const {
+    const int half = size / 2;
+    int x1 = static_cast<int>(std::round(center.x)) - half;
+    int y1 = static_cast<int>(std::round(center.y)) - half;
+    x1 = std::max(0, x1);
+    y1 = std::max(0, y1);
+    int x2 = std::min(frame_size.width, x1 + size);
+    int y2 = std::min(frame_size.height, y1 + size);
+    if (x2 <= x1 || y2 <= y1) {
+        return {};
+    }
+    return {x1, y1, x2 - x1, y2 - y1};
+}
+
+std::vector<cv::Rect> ManualTrackerManager::find_motion_clusters(
+        const cv::Mat& current_gray,
+        const cv::Mat& prev_gray,
+        const cv::Rect& search_rect) const {
+    std::vector<cv::Rect> clusters;
+    if (current_gray.empty() || prev_gray.empty() || search_rect.area() <= 0) {
+        return clusters;
+    }
+    cv::Rect clipped = search_rect & cv::Rect(0, 0, current_gray.cols, current_gray.rows);
+    if (clipped.area() <= 0) {
+        return clusters;
+    }
+    cv::Mat diff;
+    cv::absdiff(current_gray(clipped), prev_gray(clipped), diff);
+    cv::threshold(diff, diff, cfg_.motion_diff_threshold, 255, cv::THRESH_BINARY);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(diff, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    for (const auto& contour : contours) {
+        const double area = cv::contourArea(contour);
+        if (area < cfg_.min_area) {
+            continue;
+        }
+        cv::Rect rect = cv::boundingRect(contour);
+        rect.x += clipped.x;
+        rect.y += clipped.y;
+        clusters.push_back(rect);
+    }
+    return clusters;
+}
+
+bool ManualTrackerManager::try_reacquire_with_motion(
+        ManualTrack& track,
+        const cv::Mat& gray,
+        const cv::Mat& frame,
+        long long now_ms,
+        int stage,
+        const cv::Rect& roi,
+        const char* log_label) {
+    if (frame.empty() || gray.empty() || roi.area() <= 0) {
+        return false;
+    }
+
+    if (track.reacquire_stage != stage ||
+        track.reacquire_roi.x != roi.x ||
+        track.reacquire_roi.y != roi.y ||
+        track.reacquire_roi.width != roi.width ||
+        track.reacquire_roi.height != roi.height) {
+        track.reacquire_stage = stage;
+        track.reacquire_roi = roi;
+        track.reacquire_gray_frames.clear();
+    }
+
+    track.reacquire_gray_frames.push_back(gray);
+    const int required = std::max(1, cfg_.motion_frames) + 1;
+    if (static_cast<int>(track.reacquire_gray_frames.size()) < required) {
+        return false;
+    }
+    if (static_cast<int>(track.reacquire_gray_frames.size()) > required) {
+        track.reacquire_gray_frames.erase(track.reacquire_gray_frames.begin());
+    }
+
+    std::vector<cv::Point2f> motion_points;
+    cv::Rect2f motion_roi = build_motion_roi_from_sequence(track.reacquire_gray_frames, roi, motion_points);
+    if (motion_roi.area() <= 1.0f) {
+        motion_roi = build_motion_roi_from_diff(track.reacquire_gray_frames, roi);
+    }
+
+    if (motion_roi.area() <= 1.0f ||
+        motion_roi.area() < static_cast<float>(cfg_.min_area) ||
+        motion_roi.width < cfg_.min_width ||
+        motion_roi.height < cfg_.min_height) {
+        return false;
+    }
+
+    motion_roi.x -= cfg_.click_padding;
+    motion_roi.y -= cfg_.click_padding;
+    motion_roi.width += cfg_.click_padding * 2.0f;
+    motion_roi.height += cfg_.click_padding * 2.0f;
+    motion_roi = clip_rect(motion_roi, frame.size());
+    if (motion_roi.area() <= 1.0f) {
+        return false;
+    }
+
+    cv::Rect2f tracker_roi = expand_rect(motion_roi, static_cast<float>(cfg_.tracker_init_padding));
+    tracker_roi = ensure_min_size(tracker_roi, static_cast<float>(cfg_.tracker_min_size));
+    tracker_roi = clip_rect(tracker_roi, frame.size());
+    if (tracker_roi.area() <= 1.0f) {
+        return false;
+    }
+
+    track.bbox = tracker_roi;
+    track.tracker = create_tracker();
+    track.tracker->init(frame, track.bbox);
+    track.template_gray = gray(to_int_rect(track.bbox)).clone();
+    track.missed_frames = 0;
+    track.predicted = false;
+    track.predicted_center_ready = false;
+    track.last_seen_ms = now_ms;
+    track.logged_reacquire_ready = false;
+    track.stale_frames = 0;
+    track.lost_since_ms = 0;
+    track.reacquire_gray_frames.clear();
+    track.reacquire_stage = 0;
+    correct_kalman(track, rect_center(track.bbox));
+
+    if (log_cfg_.reacquire_level_logger) {
+        std::cout << log_label << " id=" << track.id << std::endl;
+    }
+    return true;
 }
 
 bool ManualTrackerManager::point_in_rect_with_padding(const cv::Rect2f& rect, int x, int y, int pad) const {
@@ -801,74 +936,6 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         }
     }
 
-    if (cfg_.auto_reacquire_nearest) {
-        for (auto& track : tracks_) {
-            if (track.missed_frames == 0) {
-                continue;
-            }
-            const long long lost_ms = now_ms - track.last_seen_ms;
-            if (lost_ms < cfg_.reacquire_delay_ms) {
-                continue;
-            }
-            if (log_cfg_.reacquire_level_logger && !track.logged_reacquire_ready) {
-                std::cout << "[TRK] priority1 (kalman wait) ready id=" << track.id << std::endl;
-                track.logged_reacquire_ready = true;
-            }
-
-            float best_dist = std::numeric_limits<float>::max();
-            ManualTrack* best = nullptr;
-            const cv::Point2f lost_center = rect_center(track.bbox);
-            for (auto& candidate : tracks_) {
-                if (candidate.id == track.id || candidate.missed_frames > 0) {
-                    continue;
-                }
-                const cv::Point2f cand_center = rect_center(candidate.bbox);
-                const float dx = lost_center.x - cand_center.x;
-                const float dy = lost_center.y - cand_center.y;
-                const float dist = std::sqrt(dx * dx + dy * dy);
-                if (dist < best_dist) {
-                    best_dist = dist;
-                    best = &candidate;
-                }
-            }
-
-            if (best && best_dist <= static_cast<float>(cfg_.reacquire_max_distance_px)) {
-                track.bbox = best->bbox;
-                track.tracker = create_tracker();
-                track.tracker->init(frame, track.bbox);
-                track.template_gray = best->template_gray.clone();
-                track.missed_frames = 0;
-                track.predicted = false;
-                track.last_seen_ms = now_ms;
-                correct_kalman(track, rect_center(track.bbox));
-                track.logged_reacquire_ready = false;
-                if (log_cfg_.reacquire_level_logger) {
-                    std::cout << "[TRK] priority2 (nearest) reacquired id=" << track.id
-                              << " dist=" << best_dist << std::endl;
-                }
-                continue;
-            }
-
-            if (best && best_dist <= static_cast<float>(cfg_.reacquire_fallback_max_distance_px)) {
-                track.bbox = best->bbox;
-                track.tracker = create_tracker();
-                track.tracker->init(frame, track.bbox);
-                track.template_gray = best->template_gray.clone();
-                track.missed_frames = 0;
-                track.predicted = false;
-                track.last_seen_ms = now_ms;
-                correct_kalman(track, rect_center(track.bbox));
-                track.logged_reacquire_ready = false;
-                if (log_cfg_.reacquire_level_logger) {
-                    std::cout << "[TRK] priority3 (fallback) reacquired id=" << track.id
-                              << " dist=" << best_dist << std::endl;
-                }
-            } else if (log_cfg_.reacquire_level_logger) {
-                std::cout << "[TRK] priority3 (fallback) no candidates id=" << track.id << std::endl;
-            }
-        }
-    }
-
     for (auto it = tracks_.begin(); it != tracks_.end(); ) {
         it->age_frames += 1;
         bool updated = false;
@@ -903,6 +970,9 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                     it->predicted_center_ready = false;
                     it->last_seen_ms = now_ms;
                     it->logged_reacquire_ready = false;
+                    it->lost_since_ms = 0;
+                    it->reacquire_stage = kReacquireNone;
+                    it->reacquire_gray_frames.clear();
                     correct_kalman(*it, rect_center(it->bbox));
                     if (cfg_.update_template) {
                         it->template_gray = current_gray(to_int_rect(it->bbox)).clone();
@@ -921,7 +991,93 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 it->bbox.y = it->predicted_center.y - it->bbox.height * 0.5f;
                 it->bbox = clip_rect(it->bbox, frame.size());
             }
-            try_reacquire_with_template(*it, frame);
+            if (it->missed_frames == 1) {
+                it->lost_since_ms = now_ms;
+                it->reacquire_stage = kReacquireNone;
+                it->reacquire_gray_frames.clear();
+            }
+
+            if (cfg_.auto_reacquire_nearest && !current_gray.empty() && !prev_gray_.empty()) {
+                const long long lost_ms = now_ms - it->last_seen_ms;
+                const cv::Point2f lost_center = it->predicted_center_ready
+                                                ? it->predicted_center
+                                                : rect_center(it->bbox);
+
+                const int base_size = std::max(cfg_.click_capture_size,
+                                               static_cast<int>(std::max(it->bbox.width, it->bbox.height)));
+
+                if (lost_ms <= cfg_.reacquire_delay_ms) {
+                    if (log_cfg_.reacquire_level_logger && !it->logged_reacquire_ready) {
+                        std::cout << "[TRK] priority1 (kalman wait) id=" << it->id << std::endl;
+                        it->logged_reacquire_ready = true;
+                    }
+                    const int kalman_size = std::max(base_size, cfg_.reacquire_kalman_radius_px * 2);
+                    cv::Rect roi = make_centered_roi(lost_center,
+                                                     std::max(2, kalman_size),
+                                                     frame.size());
+                    if (try_reacquire_with_motion(*it, current_gray, frame, now_ms,
+                                                  kReacquirePriority1, roi,
+                                                  "[TRK] priority1 (kalman motion) reacquired")) {
+                        updated = true;
+                    }
+                } else {
+                    const int near_radius = std::max(1, cfg_.reacquire_near_radius_px);
+                    cv::Rect near_rect = make_centered_roi(lost_center, near_radius * 2, frame.size());
+                    auto near_clusters = find_motion_clusters(current_gray, prev_gray_, near_rect);
+                    auto pick_nearest = [&](const std::vector<cv::Rect>& clusters, cv::Rect& out_rect, float& out_dist) {
+                        if (clusters.empty()) {
+                            return false;
+                        }
+                        float best_dist = std::numeric_limits<float>::max();
+                        for (const auto& rect : clusters) {
+                            const cv::Point2f center(rect.x + rect.width * 0.5f,
+                                                     rect.y + rect.height * 0.5f);
+                            const float dx = center.x - lost_center.x;
+                            const float dy = center.y - lost_center.y;
+                            const float dist = std::sqrt(dx * dx + dy * dy);
+                            if (dist < best_dist) {
+                                best_dist = dist;
+                                out_rect = rect;
+                            }
+                        }
+                        out_dist = best_dist;
+                        return true;
+                    };
+
+                    cv::Rect candidate;
+                    float candidate_dist = 0.0f;
+                    bool candidate_found = false;
+                    if (pick_nearest(near_clusters, candidate, candidate_dist) &&
+                        candidate_dist <= static_cast<float>(cfg_.reacquire_max_distance_px)) {
+                        candidate_found = true;
+                        if (try_reacquire_with_motion(*it, current_gray, frame, now_ms,
+                                                      kReacquirePriority2, candidate,
+                                                      "[TRK] priority2 (near motion) reacquired")) {
+                            updated = true;
+                        }
+                    } else {
+                        cv::Rect full_frame(0, 0, frame.cols, frame.rows);
+                        auto clusters = find_motion_clusters(current_gray, prev_gray_, full_frame);
+                        float fallback_dist = 0.0f;
+                        if (pick_nearest(clusters, candidate, fallback_dist) &&
+                            fallback_dist <= static_cast<float>(cfg_.reacquire_fallback_max_distance_px)) {
+                            candidate_found = true;
+                            if (try_reacquire_with_motion(*it, current_gray, frame, now_ms,
+                                                          kReacquirePriority3, candidate,
+                                                          "[TRK] priority3 (fallback motion) reacquired")) {
+                                updated = true;
+                            }
+                        } else if (log_cfg_.reacquire_level_logger) {
+                            std::cout << "[TRK] priority3 (fallback) no motion candidates id="
+                                      << it->id << std::endl;
+                        }
+                    }
+                    if (!candidate_found) {
+                        it->reacquire_stage = kReacquireNone;
+                        it->reacquire_gray_frames.clear();
+                    }
+                }
+            }
         }
 
         const long long lost_ttl_ms = cfg_.lost_bbox_ttl_ms > 0 ? cfg_.lost_bbox_ttl_ms : cfg_.max_lost_ms;

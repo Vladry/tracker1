@@ -6,6 +6,7 @@
 #include "frame_store.h"
 #include "rtsp_worker.h"
 #include "manual_tracker_manager.h"
+#include "static_target_manager.h"
 #include "overlay.h"
 #include <atomic>
 #include <mutex>
@@ -35,6 +36,7 @@ static inline long long now_steady_ms() {
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
 static ManualTrackerManager *g_manual_tracker = nullptr;
+static StaticTargetManager *g_static_manager = nullptr;
 static std::mutex g_last_frame_mutex;
 static cv::Mat g_last_frame;
 static LoggingConfig g_logging;
@@ -43,11 +45,9 @@ static LoggingConfig g_logging;
 // ===================== MOUSE CALLBACK =====================
 
 void on_mouse(int event, int x, int y, int, void *) {
-    if (event != cv::EVENT_LBUTTONDOWN)
+    if (!g_manual_tracker && !g_static_manager) {
         return;
-
-    if (!g_manual_tracker)
-        return;
+    }
 
     std::lock_guard<std::mutex> lock(g_last_frame_mutex);
     if (g_last_frame.empty()) {
@@ -56,9 +56,17 @@ void on_mouse(int event, int x, int y, int, void *) {
         }
         return;
     }
-    bool handled = g_manual_tracker->handle_click(x, y, g_last_frame, now_steady_ms());
+    bool handled = false;
+    if (event == cv::EVENT_LBUTTONDOWN && g_manual_tracker) {
+        handled = g_manual_tracker->handle_click(x, y, g_last_frame, now_steady_ms());
+    } else if (event == cv::EVENT_RBUTTONDOWN && g_static_manager) {
+        handled = g_static_manager->handle_right_click(x, y, g_last_frame, now_steady_ms());
+    } else {
+        return;
+    }
     if (g_logging.mouse_click_logger) {
         std::cout << "[MOUSE] click x=" << x << " y=" << y
+                  << " button=" << ((event == cv::EVENT_RBUTTONDOWN) ? "RMB" : "LMB")
                   << " handled=" << (handled ? "true" : "false") << std::endl;
     }
 }
@@ -89,6 +97,7 @@ int main(int argc, char *argv[]) {
     RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
     ManualTrackerManager tracker(tbl);
+    StaticTargetManager static_targets(tbl);
     OverlayRenderer overlay(tbl);
     rtsp.start();
 
@@ -152,6 +161,7 @@ int main(int argc, char *argv[]) {
     });
 
     g_manual_tracker = &tracker;
+    g_static_manager = &static_targets;
 
 
     std::thread tracker_thread([&]() {
@@ -173,6 +183,7 @@ int main(int argc, char *argv[]) {
             tracker.update(frame, now_steady_ms());
 
             overlay.render(frame, tracker.targets(), -1);
+            overlay.render_static_targets(frame, static_targets.targets());
 
             // Публикуем кадр с overlay для UI (отдельный store => нет "саморазгона")
             ui_store.setFrame(std::move(frame));

@@ -39,9 +39,12 @@ set(FIVE_THREADS_SOURCES
         src/rtsp_worker.cpp
         src/rtsp_watch_dog.cpp
         src/static_box_manager.cpp
+        src/static_target_manager.cpp
         src/tracker_manager.cpp
         src/merge_bbox.cpp
         src/yolo_postprocess.cpp
+        include/static_target_manager.h
+        src/static_target_manager.cpp
 )
 
 add_executable(Five_Threads ${FIVE_THREADS_SOURCES})

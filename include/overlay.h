@@ -6,6 +6,7 @@
 
 #include "tracker_manager.h"      // struct Target { int id; cv::Rect bbox; ... }
 #include "static_box_manager.h"   // struct static_box { int id; cv::Rect rect; static_box_state state; ... }
+#include "static_target_manager.h"
 #include "config.h"
 
 //------------------------------------------------------------------------------
@@ -39,6 +40,11 @@ public:
     void render_static_boxes(
             cv::Mat& frame,
             const std::vector<static_box>& boxes
+    );
+
+    void render_static_targets(
+            cv::Mat& frame,
+            const std::vector<StaticTarget>& targets
     );
 
 private:

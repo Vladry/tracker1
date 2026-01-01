@@ -214,7 +214,7 @@ void OverlayRenderer::render(
         draw_rect_alpha(frame, hud, cv::Scalar(0, 0, 0), cfg_.hud_alpha);
     }
 
-    // Набор id, которые встретились в этом кадре — нужен для очистки истории.
+    // Набор id, которые встретились в этом кдре — нужен для очистки истории.
     std::unordered_set<int> seen_ids;
     seen_ids.reserve(targets.size());
 
@@ -291,6 +291,26 @@ void OverlayRenderer::render_static_boxes(
         std::snprintf(buf, sizeof(buf), "static id=%d", sb.id);
         draw_label(frame, cv::Point(r.x + 2, std::max(14, r.y - 2)),
                    buf, color);
+#endif
+    }
+}
+
+//------------------------------------------------------------------------------
+// Рендер статических целей (ПКМ-детекция)
+//------------------------------------------------------------------------------
+void OverlayRenderer::render_static_targets(
+        cv::Mat& frame,
+        const std::vector<StaticTarget>& targets
+) {
+    for (const auto& target : targets) {
+        const cv::Rect r = target.bbox;
+        cv::Scalar color(255, 0, 0); // blue
+        cv::rectangle(frame, r, color, 2);
+
+#ifdef SHOW_IDS
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "static id=%d", target.id);
+        draw_label(frame, cv::Point(r.x + 2, std::max(14, r.y - 2)), buf, color);
 #endif
     }
 }
