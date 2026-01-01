@@ -3,7 +3,7 @@
 # max_missed_frames = 10
 #(константа скорей всего не используется -проверь в ручную!)
 
-# Максимальное количество одновременных целей. Ограничивает нагрузку и шум. Большие значения увеличивают нагрузку на CPU. Малые значения могут приводить к потере целей. Подбирайте под мощность устройства и плотность сцены.
+# Максимальное количество одновременных целей. Ограничивае нагрузку и шум. Большие значения увеличивают нагрузку на CPU. Малые значения могут приводить к потере целей. Подбирайте под мощность устройства и плотность сцены.
 # max_targets = 50
 #(константа скорей всего не используется -проверь в ручную!)
 
@@ -46,22 +46,22 @@ remove_padding = 6
 fallback_box_size = 20
 
 # Максимально допустимая доля площади кадра для ROI (0..1).
-max_area_ratio = 0.01
+max_area_ratio = 0.1
 
 # Радиус поиска движущейся цели вокруг клика (пиксели).
-motion_search_radius = 10
+motion_search_radius = 30
 
 # Порог разницы яркости для поиска движения (0..255).
 motion_diff_threshold = 15
 
 # Радиус поиска статической цели вокруг клика (пиксели).
-click_search_radius = 10
+click_search_radius = 20
 
 # Размер квадратной области вокруг клика для анализа движения (пиксели).
-click_capture_size = 40
+click_capture_size = 80
 
 # Количество последующих кадров для анализа движения пикселей.
-motion_frames = 5
+motion_frames = 3
 
 # Дополнительное расширение bbox при инициализации трекера.
 tracker_init_padding = 2
@@ -70,19 +70,19 @@ tracker_init_padding = 2
 tracker_min_size = 14
 
 # Минимальная амплитуда движения (пиксели) для отбора точек.
-motion_min_magnitude = 0.4
+motion_min_magnitude = 0.2
 
 # Допуск по направлению движения (градусы).
 motion_angle_tolerance_deg = 20.0
 
 # Допуск по модулю смещения (пиксели).
-motion_mag_tolerance_px = 30.0
+motion_mag_tolerance_px = 3.0
 
 # Минимальная доля движущихся пикселей в bbox для подтверждения трекинга.
 tracker_motion_min_ratio = 0.02
 
 # Количество кадров, прежде чем считать bbox потерянным по малому движению.
-tracker_motion_grace_frames = 5
+tracker_motion_grace_frames = 3
 
 # Время жизни bbox после потери (мс).
 lost_bbox_ttl_ms = 1000
@@ -91,10 +91,13 @@ lost_bbox_ttl_ms = 1000
 reacquire_fallback_max_distance_px = 1300
 
 # Радиус ожидания (Калман) для пере-захвата по движению.
-reacquire_kalman_radius_px = 320
+reacquire_kalman_radius_px = 120
 
 # Радиус поиска ближайших движущихся целей после ожидания.
-reacquire_near_radius_px = 1200
+reacquire_near_radius_px = 200
+
+# Использовать Калман для предсказания позиции.
+use_kalman = false
 
 # Выравнивать контраст в области клика перед flood fill.
 click_equalize = true
@@ -110,7 +113,7 @@ floodfill_lo_diff = 20
 floodfill_hi_diff = 20
 
 # Минимальный размер ROI для принятия.
-min_area = 10
+min_area = 20
 min_width = 6
 min_height = 6
 
@@ -118,7 +121,7 @@ min_height = 6
 search_radius = 300
 
 # Порог совпадения шаблона (0..1) для успешного ре-захвата.
-match_threshold = 0.2
+match_threshold = 0.7
 
 # Обновлять шаблон при успешном трекинге.
 update_template = true
@@ -130,10 +133,10 @@ max_lost_ms = 2000
 auto_reacquire_nearest = true
 
 # Задержка (мс) до переназначения потерянной цели.
-reacquire_delay_ms = 2000
+reacquire_delay_ms = 1000
 
 # Максимальная дистанция (пиксели) до ближайшей цели для переназначения.
-reacquire_max_distance_px = 1200
+reacquire_max_distance_px = 320
 
 # Тип трекера для ручного режима: KCF, CSRT.
 tracker_type = "KCF"

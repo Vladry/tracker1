@@ -91,6 +91,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.reacquire_fallback_max_distance_px = read_required<int>(*cfg, "reacquire_fallback_max_distance_px");
         cfg_.reacquire_kalman_radius_px = read_required<int>(*cfg, "reacquire_kalman_radius_px");
         cfg_.reacquire_near_radius_px = read_required<int>(*cfg, "reacquire_near_radius_px");
+        cfg_.use_kalman = read_required<bool>(*cfg, "use_kalman");
         cfg_.click_equalize = read_required<bool>(*cfg, "click_equalize");
         cfg_.floodfill_fill_overlay = read_required<bool>(*cfg, "floodfill_fill_overlay");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
@@ -130,6 +131,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " reacquire_fallback_max_distance_px=" << cfg_.reacquire_fallback_max_distance_px
                   << " reacquire_kalman_radius_px=" << cfg_.reacquire_kalman_radius_px
                   << " reacquire_near_radius_px=" << cfg_.reacquire_near_radius_px
+                  << " use_kalman=" << (cfg_.use_kalman ? "true" : "false")
                   << " click_equalize=" << (cfg_.click_equalize ? "true" : "false")
                   << " floodfill_fill_overlay=" << (cfg_.floodfill_fill_overlay ? "true" : "false")
                   << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
@@ -647,6 +649,10 @@ cv::Rect2f ManualTrackerManager::build_motion_roi_from_diff(
 }
 
 void ManualTrackerManager::init_kalman(ManualTrack& track, const cv::Point2f& center) {
+    if (!cfg_.use_kalman) {
+        track.kf_ready = false;
+        return;
+    }
     track.kf = cv::KalmanFilter(4, 2, 0, CV_32F);
     track.kf.transitionMatrix = (cv::Mat_<float>(4, 4) <<
                                                        1, 0, 1, 0,
@@ -664,7 +670,7 @@ void ManualTrackerManager::init_kalman(ManualTrack& track, const cv::Point2f& ce
 }
 
 void ManualTrackerManager::predict_kalman(ManualTrack& track) {
-    if (!track.kf_ready) {
+    if (!cfg_.use_kalman || !track.kf_ready) {
         return;
     }
     cv::Mat prediction = track.kf.predict();
@@ -675,7 +681,7 @@ void ManualTrackerManager::predict_kalman(ManualTrack& track) {
 }
 
 void ManualTrackerManager::correct_kalman(ManualTrack& track, const cv::Point2f& center) {
-    if (!track.kf_ready) {
+    if (!cfg_.use_kalman || !track.kf_ready) {
         return;
     }
     cv::Mat measurement = (cv::Mat_<float>(2, 1) << center.x, center.y);
@@ -787,9 +793,11 @@ float ManualTrackerManager::compute_contrast(const cv::Mat& frame, const cv::Rec
     return static_cast<float>(stddev[0]);
 }
 
+// обработчик ЛКМ, запускающий отслеживание движущихся целей.
 bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // здесь -логика удаления отслеживаемых целей по клику на зелённый ббокс:
     for (auto it = tracks_.begin(); it != tracks_.end(); ++it) {
         if (point_in_rect_with_padding(it->bbox, x, y, cfg_.remove_padding)) {
             tracks_.erase(it);
@@ -811,6 +819,8 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
         return false;
     }
 
+    // Клик → подозрение на объект. В течение нескольких кадров: анализируется движение в ROI, подтверждается, что это реальный объект, а не шум
+    //Только после подтверждения создаётся Track, цель попадает в tracks_ и вот там запускается трекер
     PendingClick pending;
     pending.click = {x, y};
     pending.roi = roi;
@@ -1125,7 +1135,8 @@ void ManualTrackerManager::refresh_targets() {
         tg.target_name = "T" + std::to_string(tr.id);
         tg.bbox = tr.bbox;
         tg.age_frames = tr.age_frames;
-        tg.missed_frames = tr.missed_frames;
+        // строка ниже переведёт статус цели в "expired" и потом, в рендере по Target::missed_frames выполнится перевод зелёного в серый
+        tg.missed_frames = std::max(tr.missed_frames, tr.stale_frames);
         targets_.push_back(std::move(tg));
     }
 }

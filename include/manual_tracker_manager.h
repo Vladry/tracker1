@@ -33,6 +33,7 @@ public:
         int reacquire_fallback_max_distance_px = 300;
         int reacquire_kalman_radius_px = 120;
         int reacquire_near_radius_px = 200;
+        bool use_kalman = false;
         bool click_equalize = true;
         bool floodfill_fill_overlay = true;
         int floodfill_lo_diff = 20;
