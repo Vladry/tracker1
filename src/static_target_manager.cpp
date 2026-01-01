@@ -34,6 +34,7 @@ bool StaticTargetManager::load_config(const toml::table& tbl) {
         cfg_.click_equalize = read_required<bool>(*cfg, "click_equalize");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
+        cfg_.overlay_ttl_seconds = read_required<int>(*cfg, "overlay_ttl_seconds");
         cfg_.min_area = read_required<int>(*cfg, "min_area");
         cfg_.min_width = read_required<int>(*cfg, "min_width");
         cfg_.min_height = read_required<int>(*cfg, "min_height");
@@ -47,6 +48,7 @@ bool StaticTargetManager::load_config(const toml::table& tbl) {
                   << " click_equalize=" << (cfg_.click_equalize ? "true" : "false")
                   << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
                   << " floodfill_hi_diff=" << cfg_.floodfill_hi_diff
+                  << " overlay_ttl_seconds=" << cfg_.overlay_ttl_seconds
                   << " min_area=" << cfg_.min_area
                   << " min_width=" << cfg_.min_width
                   << " min_height=" << cfg_.min_height
@@ -75,7 +77,7 @@ bool StaticTargetManager::point_in_rect_with_padding(const cv::Rect2f& rect, int
     return padded.contains(cv::Point2f(static_cast<float>(x), static_cast<float>(y)));
 }
 
-cv::Rect2f StaticTargetManager::build_roi_from_click(const cv::Mat& frame, int x, int y) const {
+cv::Rect2f StaticTargetManager::build_roi_from_click(const cv::Mat& frame, int x, int y, cv::Mat* mask_out) const {
     if (frame.empty()) {
         return {};
     }
@@ -107,14 +109,21 @@ cv::Rect2f StaticTargetManager::build_roi_from_click(const cv::Mat& frame, int x
         cv::equalizeHist(search, search_for_fill);
     }
 
-    cv::Mat mask(search_for_fill.rows + 2, search_for_fill.cols + 2, CV_8UC1, cv::Scalar(0));
+    cv::Mat flood_mask(search_for_fill.rows + 2, search_for_fill.cols + 2, CV_8UC1, cv::Scalar(0));
     cv::Rect bounding;
     const int flags = 4 | cv::FLOODFILL_MASK_ONLY | (255 << 8);
     const cv::Scalar lo(cfg_.floodfill_lo_diff);
     const cv::Scalar hi(cfg_.floodfill_hi_diff);
 
-    cv::floodFill(search_for_fill, mask, cv::Point(x - search_rect.x, y - search_rect.y),
+    cv::floodFill(search_for_fill, flood_mask, cv::Point(x - search_rect.x, y - search_rect.y),
                   cv::Scalar(255), &bounding, lo, hi, flags);
+
+    if (mask_out) {
+        cv::Mat full_mask = cv::Mat::zeros(frame.size(), CV_8UC1);
+        cv::Mat mask_roi = flood_mask(cv::Rect(1, 1, search.cols, search.rows));
+        mask_roi.copyTo(full_mask(search_rect));
+        *mask_out = full_mask;
+    }
 
     cv::Rect2f roi(static_cast<float>(bounding.x + search_rect.x),
                    static_cast<float>(bounding.y + search_rect.y),
@@ -200,7 +209,8 @@ bool StaticTargetManager::handle_right_click(int x, int y, const cv::Mat& frame,
         return false;
     }
 
-    cv::Rect2f roi = build_roi_from_click(frame, x, y);
+    cv::Mat flood_mask;
+    cv::Rect2f roi = build_roi_from_click(frame, x, y, &flood_mask);
     if (roi.area() <= 1.0f) {
         return false;
     }
@@ -220,6 +230,13 @@ bool StaticTargetManager::handle_right_click(int x, int y, const cv::Mat& frame,
     target.created_ms = now_ms;
     targets_.push_back(std::move(target));
 
+    if (!flood_mask.empty()) {
+        flood_fill_mask_ = flood_mask;
+        flood_fill_overlay_ = cv::Mat::zeros(frame.size(), frame.type());
+        flood_fill_overlay_.setTo(cv::Scalar(0, 255, 255), flood_fill_mask_);
+        overlay_expire_ms_ = now_ms + static_cast<long long>(cfg_.overlay_ttl_seconds) * 1000;
+    }
+
     if (log_cfg_.manual_detector_level_logger) {
         std::cout << "[STATIC] capture id=" << (next_id_ - 1)
                   << " contrast=" << contrast << std::endl;
@@ -227,7 +244,16 @@ bool StaticTargetManager::handle_right_click(int x, int y, const cv::Mat& frame,
     return true;
 }
 
-void StaticTargetManager::update(const cv::Mat& frame, long long now_ms) {
-    (void)frame;
-    (void)now_ms;
+void StaticTargetManager::update(cv::Mat& frame, long long now_ms) {
+    if (overlay_expire_ms_ > 0 && now_ms >= overlay_expire_ms_) {
+        flood_fill_overlay_.release();
+        flood_fill_mask_.release();
+        overlay_expire_ms_ = 0;
+    }
+    if (!flood_fill_overlay_.empty() && !flood_fill_mask_.empty()) {
+        cv::Mat blended;
+        constexpr double kOverlayAlpha = 0.7;
+        cv::addWeighted(frame, 1.0 - kOverlayAlpha, flood_fill_overlay_, kOverlayAlpha, 0.0, blended);
+        blended.copyTo(frame, flood_fill_mask_);
+    }
 }

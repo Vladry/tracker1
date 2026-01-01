@@ -25,6 +25,7 @@ public:
         bool click_equalize = true;
         int floodfill_lo_diff = 20;
         int floodfill_hi_diff = 20;
+        int overlay_ttl_seconds = 3;
         int min_area = 60;
         int min_width = 6;
         int min_height = 6;
@@ -34,7 +35,7 @@ public:
     explicit StaticTargetManager(const toml::table& tbl);
 
     bool handle_right_click(int x, int y, const cv::Mat& frame, long long now_ms);
-    void update(const cv::Mat& frame, long long now_ms);
+    void update(cv::Mat& frame, long long now_ms);
     const std::vector<StaticTarget>& targets() const { return targets_; }
 
 private:
@@ -45,8 +46,12 @@ private:
     std::mutex mutex_;
 
     bool load_config(const toml::table& tbl);
-    cv::Rect2f build_roi_from_click(const cv::Mat& frame, int x, int y) const;
+    cv::Rect2f build_roi_from_click(const cv::Mat& frame, int x, int y, cv::Mat* mask) const;
     cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) const;
     float compute_contrast(const cv::Mat& frame, const cv::Rect2f& roi) const;
     bool point_in_rect_with_padding(const cv::Rect2f& rect, int x, int y, int pad) const;
+
+    cv::Mat flood_fill_overlay_;
+    cv::Mat flood_fill_mask_;
+    long long overlay_expire_ms_ = 0;
 };

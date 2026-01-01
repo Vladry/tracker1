@@ -214,7 +214,7 @@ void OverlayRenderer::render(
         draw_rect_alpha(frame, hud, cv::Scalar(0, 0, 0), cfg_.hud_alpha);
     }
 
-    // Набор id, которые встретились в этом кдре — нужен для очистки истории.
+    // Набор id, которые встретились в этом кадре — нужен для очистки истории.
     std::unordered_set<int> seen_ids;
     seen_ids.reserve(targets.size());
 

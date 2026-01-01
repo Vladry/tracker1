@@ -43,13 +43,12 @@ set(FIVE_THREADS_SOURCES
         src/tracker_manager.cpp
         src/merge_bbox.cpp
         src/yolo_postprocess.cpp
-        include/static_target_manager.h
-        src/static_target_manager.cpp
 )
 
 add_executable(Five_Threads ${FIVE_THREADS_SOURCES})
 
 target_sources(Five_Threads PRIVATE ${FIVE_THREADS_SOURCES})
+target_sources(Five_Threads PRIVATE src/overlay.cpp)
 
 configure_file(
         ${CMAKE_SOURCE_DIR}/config.toml
