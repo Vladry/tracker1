@@ -1,7 +1,9 @@
 #pragma once
 
-#include <string>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
 
 

@@ -1,9 +1,11 @@
 #include "overlay.h"
 //#include <algorithm>
+#include <opencv2/opencv.hpp>
 #include <cmath>
 #include <deque>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 //==============================================================================
 // Визуальное сглаживание динамических bbox (рамок)
@@ -301,7 +303,7 @@ void OverlayRenderer::render_static_boxes(
 void OverlayRenderer::render_static_targets(
         cv::Mat& frame,
         const std::vector<StaticTarget>& targets
-) {
+) const {
     for (const auto& target : targets) {
         const cv::Rect r = target.bbox;
         cv::Scalar color(255, 0, 0); // blue

@@ -31,6 +31,44 @@ static inline long long now_steady_ms() {
             std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+static toml::table load_config_tables() {
+    toml::table combined;
+    auto merge_table = [&](const toml::table& src, std::string_view key) {
+        const auto* table = src.get_as<toml::table>(key);
+        if (!table) {
+            throw std::runtime_error(std::string("missing [") + std::string(key) + "] table");
+        }
+        combined.insert_or_assign(std::string(key), *table);
+    };
+
+    const toml::table rknn = toml::parse_file("RKNN.toml");
+    merge_table(rknn, "detector");
+
+    const toml::table trackers = toml::parse_file("trackers.toml");
+    merge_table(trackers, "tracker");
+    merge_table(trackers, "manual_tracker");
+
+    const toml::table static_detector = toml::parse_file("static_detector.toml");
+    merge_table(static_detector, "static_detector");
+
+    const toml::table logging = toml::parse_file("logging.toml");
+    merge_table(logging, "logging");
+
+    const toml::table motion_detector = toml::parse_file("motion_detector.toml");
+    merge_table(motion_detector, "motion_detector");
+
+    const toml::table overlay = toml::parse_file("overlay.toml");
+    merge_table(overlay, "overlay");
+
+    const toml::table rebind_smoothing = toml::parse_file("rebind_smoothing.toml");
+    merge_table(rebind_smoothing, "static_rebind");
+    merge_table(rebind_smoothing, "smoothing");
+
+    const toml::table rtsp = toml::parse_file("rtsp.toml");
+    merge_table(rtsp, "rtsp");
+
+    return combined;
+}
 
 
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
@@ -92,7 +130,7 @@ int main(int argc, char *argv[]) {
 
 
     // получаем конфигурации из config.toml
-    toml::table tbl = toml::parse_file("config.toml");
+    toml::table tbl = load_config_tables();
     load_logging_config(tbl, g_logging);
     RtspWorker rtsp(raw_store, tbl);
     load_rtsp_watchdog(tbl, rtsp_watchdog);
@@ -186,7 +224,7 @@ int main(int argc, char *argv[]) {
             overlay.render_static_targets(frame, static_targets.targets());
             static_targets.update(frame, now_steady_ms());
 
-            // Публикуем кадр с overlay для UI (отдельный store => нет "саморазгона")
+            // Пуликуем кадр с overlay для UI (отдельный store => нет "саморазгона")
             ui_store.setFrame(std::move(frame));
         }
         std::cout << "[TRK] tracker thread exit" << std::endl;

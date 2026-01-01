@@ -1,0 +1,18 @@
+[logging]
+# Включает логи RTSP-потока (создание, ошибки, остановка).
+rtsp_level_logger_on = false
+
+# Логи детекции ручного клика (статическая/динамическая цель + контраст).
+manual_detector_level_logger = true
+
+# Логи трекера (старт, потеря, готовность к пере-захвату, пере-захват).
+tracker_level_logger = true
+
+# Логи процессов пере-захвата (приоритеты 1/2/3).
+reacquire_level_logger = true
+
+# Логи кликов мыши.
+mouse_click_logger = true
+
+# Лог окончания формирования образа цели.
+target_object_created_logger = true

@@ -50,11 +50,14 @@ add_executable(Five_Threads ${FIVE_THREADS_SOURCES})
 target_sources(Five_Threads PRIVATE ${FIVE_THREADS_SOURCES})
 target_sources(Five_Threads PRIVATE src/overlay.cpp)
 
-configure_file(
-        ${CMAKE_SOURCE_DIR}/config.toml
-        ${CMAKE_BINARY_DIR}/config.toml
-        COPYONLY
-)
+configure_file(${CMAKE_SOURCE_DIR}/RKNN.toml ${CMAKE_BINARY_DIR}/RKNN.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/logging.toml ${CMAKE_BINARY_DIR}/logging.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/motion_detector.toml ${CMAKE_BINARY_DIR}/motion_detector.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/overlay.toml ${CMAKE_BINARY_DIR}/overlay.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/rebind_smoothing.toml ${CMAKE_BINARY_DIR}/rebind_smoothing.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/rtsp.toml ${CMAKE_BINARY_DIR}/rtsp.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/static_detector.toml ${CMAKE_BINARY_DIR}/static_detector.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/trackers.toml ${CMAKE_BINARY_DIR}/trackers.toml COPYONLY)
 
 if (EXISTS "${CMAKE_SOURCE_DIR}/models")
     file(COPY "${CMAKE_SOURCE_DIR}/models" DESTINATION "${CMAKE_BINARY_DIR}")

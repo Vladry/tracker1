@@ -45,7 +45,7 @@ public:
     void render_static_targets(
             cv::Mat& frame,
             const std::vector<StaticTarget>& targets
-    );
+    ) const;
 
 private:
     Config cfg_;
