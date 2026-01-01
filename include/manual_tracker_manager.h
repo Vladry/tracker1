@@ -27,6 +27,8 @@ public:
         float motion_min_magnitude = 0.4f;
         float motion_angle_tolerance_deg = 20.0f;
         float motion_mag_tolerance_px = 3.0f;
+        float tracker_motion_min_ratio = 0.02f;
+        int tracker_motion_grace_frames = 3;
         int lost_bbox_ttl_ms = 3000;
         int reacquire_fallback_max_distance_px = 300;
         bool click_equalize = true;
@@ -70,6 +72,7 @@ private:
         bool kf_ready = false;
         cv::Point2f predicted_center;
         bool predicted_center_ready = false;
+        int stale_frames = 0;
     };
 
     struct PendingClick {
@@ -96,6 +99,7 @@ private:
     cv::Rect2f find_motion_roi(const cv::Mat& frame, int x, int y);
     cv::Rect2f build_motion_roi_from_sequence(const std::vector<cv::Mat>& frames, const cv::Rect& roi,
                                               std::vector<cv::Point2f>& motion_points) const;
+    cv::Rect2f build_motion_roi_from_diff(const std::vector<cv::Mat>& frames, const cv::Rect& roi) const;
     cv::Rect make_click_roi(const cv::Mat& frame, int x, int y) const;
     cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) const;
     void init_kalman(ManualTrack& track, const cv::Point2f& center);
