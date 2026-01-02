@@ -28,28 +28,6 @@ namespace {
         return frame.clone();
     }
 
-    static inline cv::Rect2f expand_rect(const cv::Rect2f& rect, float pad) {
-        return cv::Rect2f(rect.x - pad, rect.y - pad, rect.width + pad * 2.0f, rect.height + pad * 2.0f);
-    }
-
-    static inline cv::Rect2f ensure_min_size(const cv::Rect2f& rect, float min_size) {
-        if (rect.width >= min_size && rect.height >= min_size) {
-            return rect;
-        }
-        const cv::Point2f center(rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f);
-        const float size = std::max(min_size, std::max(rect.width, rect.height));
-        return cv::Rect2f(center.x - size * 0.5f, center.y - size * 0.5f, size, size);
-    }
-
-    static inline float angle_between(float a, float b) {
-        constexpr float kPi = 3.14159265f;
-        float diff = std::fabs(a - b);
-        if (diff > kPi) {
-            diff = 2.0f * kPi - diff;
-        }
-        return diff;
-    }
-
     constexpr size_t kVisibilityHistorySize = 3;
 }
 
@@ -57,6 +35,20 @@ namespace {
 ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {
     load_logging_config(tbl, log_cfg_);
     load_config(tbl);
+    ManualMotionDetectorConfig motion_cfg;
+    motion_cfg.click_capture_size = cfg_.click_capture_size;
+    motion_cfg.motion_frames = cfg_.motion_frames;
+    motion_cfg.motion_diff_threshold = cfg_.motion_diff_threshold;
+    motion_cfg.click_padding = cfg_.click_padding;
+    motion_cfg.tracker_init_padding = cfg_.tracker_init_padding;
+    motion_cfg.tracker_min_size = cfg_.tracker_min_size;
+    motion_cfg.motion_min_magnitude = cfg_.motion_min_magnitude;
+    motion_cfg.motion_angle_tolerance_deg = cfg_.motion_angle_tolerance_deg;
+    motion_cfg.motion_mag_tolerance_px = cfg_.motion_mag_tolerance_px;
+    motion_cfg.min_area = cfg_.min_area;
+    motion_cfg.min_width = cfg_.min_width;
+    motion_cfg.min_height = cfg_.min_height;
+    motion_detector_.update_config(motion_cfg);
 }
 
 // Загружает параметры ручного трекера из TOML и печатает краткую сводку.
@@ -90,6 +82,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.min_height = read_required<int>(*cfg, "min_height");
         cfg_.reacquire_delay_ms = read_required<int>(*cfg, "reacquire_delay_ms");
         cfg_.tracker_type = read_required<std::string>(*cfg, "tracker_type");
+        cfg_.candidate_search_timeout_ms = read_required<int>(*cfg, "candidate_search_timeout_ms");
         std::cout << "[MANUAL] config: max_targets=" << cfg_.max_targets
                   << " click_padding=" << cfg_.click_padding
                   << " fallback_box_size=" << cfg_.fallback_box_size
@@ -112,6 +105,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " min_width=" << cfg_.min_width
                   << " min_height=" << cfg_.min_height
                   << " reacquire_delay_ms=" << cfg_.reacquire_delay_ms
+                  << " candidate_search_timeout_ms=" << cfg_.candidate_search_timeout_ms
                   << " tracker_type=" << cfg_.tracker_type
                   << std::endl;
         return true;
@@ -156,302 +150,6 @@ bool ManualTrackerManager::has_recent_visibility_loss(const ManualTrack& track) 
                        [](bool visible) { return !visible; });
 }
 
-// По клику выделяет ROI через flood fill и проверяет минимальные ограничения.
-// При неудаче возвращает fallback-бокс фиксированного размера вокруг клика.
-cv::Rect2f ManualTrackerManager::build_roi_from_click(const cv::Mat& frame, int x, int y) {
-    if (frame.empty()) {
-        return {};
-    }
-    if (x < 0 || y < 0 || x >= frame.cols || y >= frame.rows) {
-        return {};
-    }
-
-    cv::Mat gray;
-    if (frame.channels() == 3) {
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-    } else {
-        gray = frame;
-    }
-
-    const int search_radius = std::max(1, cfg_.click_search_radius);
-    const int x1 = std::max(0, x - search_radius);
-    const int y1 = std::max(0, y - search_radius);
-    const int x2 = std::min(gray.cols, x + search_radius);
-    const int y2 = std::min(gray.rows, y + search_radius);
-
-    cv::Rect search_rect(x1, y1, x2 - x1, y2 - y1);
-    if (search_rect.width <= 0 || search_rect.height <= 0) {
-        return {};
-    }
-
-    cv::Mat search = gray(search_rect);
-    cv::Mat search_for_fill = search.clone();
-    if (cfg_.click_equalize) {
-        cv::equalizeHist(search, search_for_fill);
-    }
-    cv::Mat mask(search_for_fill.rows + 2, search_for_fill.cols + 2, CV_8UC1, cv::Scalar(0));
-    cv::Rect bounding;
-    const int flags = 4 | cv::FLOODFILL_MASK_ONLY | (255 << 8);
-    const cv::Scalar lo(cfg_.floodfill_lo_diff);
-    const cv::Scalar hi(cfg_.floodfill_hi_diff);
-
-    cv::floodFill(search_for_fill, mask, cv::Point(x - search_rect.x, y - search_rect.y),
-                  cv::Scalar(255), &bounding, lo, hi, flags);
-    if (cfg_.floodfill_fill_overlay) {
-        flood_fill_mask_ = cv::Mat::zeros(frame.size(), CV_8UC1);
-        flood_fill_overlay_ = cv::Mat::zeros(frame.size(), frame.type());
-        cv::Mat mask_roi = mask(cv::Rect(1, 1, search.cols, search.rows));
-        mask_roi.copyTo(flood_fill_mask_(search_rect));
-        flood_fill_overlay_.setTo(cv::Scalar(0, 0, 255), flood_fill_mask_);
-    }
-
-    cv::Rect2f roi(static_cast<float>(bounding.x + search_rect.x),
-                   static_cast<float>(bounding.y + search_rect.y),
-                   static_cast<float>(bounding.width),
-                   static_cast<float>(bounding.height));
-
-    if (roi.area() < static_cast<float>(cfg_.min_area) ||
-        roi.width < cfg_.min_width ||
-        roi.height < cfg_.min_height) {
-        const float half = static_cast<float>(cfg_.fallback_box_size) * 0.5f;
-        roi = cv::Rect2f(static_cast<float>(x) - half, static_cast<float>(y) - half,
-                         static_cast<float>(cfg_.fallback_box_size),
-                         static_cast<float>(cfg_.fallback_box_size));
-    }
-
-    roi.x -= cfg_.click_padding;
-    roi.y -= cfg_.click_padding;
-    roi.width += cfg_.click_padding * 2.0f;
-    roi.height += cfg_.click_padding * 2.0f;
-
-    const float max_ratio = std::max(0.0f, std::min(cfg_.max_area_ratio, 1.0f));
-    if (max_ratio > 0.0f) {
-        const float max_area = static_cast<float>(frame.cols * frame.rows) * max_ratio;
-        if (roi.area() > max_area && max_area > 1.0f) {
-            const float scale = std::sqrt(max_area / roi.area());
-            const cv::Point2f center = rect_center(roi);
-            roi.width *= scale;
-            roi.height *= scale;
-            roi.x = center.x - roi.width * 0.5f;
-            roi.y = center.y - roi.height * 0.5f;
-        }
-    }
-    if (!roi.contains(cv::Point2f(static_cast<float>(x), static_cast<float>(y)))) {
-        const float half = static_cast<float>(cfg_.fallback_box_size) * 0.5f;
-        roi = cv::Rect2f(static_cast<float>(x) - half, static_cast<float>(y) - half,
-                         static_cast<float>(cfg_.fallback_box_size),
-                         static_cast<float>(cfg_.fallback_box_size));
-    }
-    return clip_rect(roi, frame.size());
-}
-
-// Создаёт квадратный ROI вокруг клика для накопления motion-кадров.
-// Этот ROI не расширяется padding-ом и используется только для анализа движения.
-cv::Rect ManualTrackerManager::make_click_roi(const cv::Mat& frame, int x, int y) const {
-    if (frame.empty()) {
-        return {};
-    }
-    const int size = std::max(2, cfg_.click_capture_size);
-    const int half = size / 2;
-    const int x1 = std::max(0, x - half);
-    const int y1 = std::max(0, y - half);
-    const int x2 = std::min(frame.cols, x + half);
-    const int y2 = std::min(frame.rows, y + half);
-    if (x2 <= x1 || y2 <= y1) {
-        return {};
-    }
-    return {x1, y1, x2 - x1, y2 - y1};
-}
-
-// Строит ROI движущегося объекта по последовательности кадров.
-// Использует оптический поток и фильтрацию по согласованному движению точек.
-cv::Rect2f ManualTrackerManager::build_motion_roi_from_sequence(
-        const std::vector<cv::Mat>& frames,
-        const cv::Rect& roi,
-        std::vector<cv::Point2f>& motion_points) const {
-    motion_points.clear();
-    if (frames.size() < 2 || roi.width <= 0 || roi.height <= 0) {
-        return {};
-    }
-
-    constexpr int kMaxFeatures = 400;
-    constexpr float kQuality = 0.01f;
-    constexpr float kMinDistance = 3.0f;
-    const float kAngleTolDeg = std::max(1.0f, cfg_.motion_angle_tolerance_deg);
-    const float kMagTolPx = std::max(0.1f, cfg_.motion_mag_tolerance_px);
-    const float kMinMotionPx = std::max(0.05f, cfg_.motion_min_magnitude);
-    constexpr float kAngleBinDeg = 10.0f;
-    constexpr float kMagBinPx = 2.0f;
-
-    constexpr float kPi = 3.14159265f;
-    const float angle_tol = kAngleTolDeg * kPi / 180.0f;
-    const float angle_bin = kAngleBinDeg * kPi / 180.0f;
-
-    const cv::Mat& base = frames.front();
-    cv::Mat roi_gray = base(roi);
-
-    std::vector<cv::Point2f> points;
-    cv::goodFeaturesToTrack(roi_gray, points, kMaxFeatures, kQuality, kMinDistance);
-    if (points.empty()) {
-        return {};
-    }
-    for (auto& p : points) {
-        p.x += static_cast<float>(roi.x);
-        p.y += static_cast<float>(roi.y);
-    }
-
-    const int steps = static_cast<int>(frames.size()) - 1;
-    std::vector<cv::Point2f> prev_points = points;
-    std::vector<cv::Point2f> curr_points;
-    std::vector<std::vector<cv::Point2f>> step_vectors(points.size());
-    std::vector<bool> valid(points.size(), true);
-
-    for (size_t i = 1; i < frames.size(); ++i) {
-        std::vector<unsigned char> status;
-        std::vector<float> err;
-        cv::calcOpticalFlowPyrLK(frames[i - 1], frames[i], prev_points, curr_points, status, err);
-        for (size_t idx = 0; idx < points.size(); ++idx) {
-            if (!valid[idx]) {
-                continue;
-            }
-            if (idx >= status.size() || status[idx] == 0) {
-                valid[idx] = false;
-                continue;
-            }
-            cv::Point2f step = curr_points[idx] - prev_points[idx];
-            step_vectors[idx].push_back(step);
-        }
-        prev_points = curr_points;
-    }
-
-    struct MotionCandidate {
-        cv::Point2f last_pos;
-        cv::Point2f mean_step;
-    };
-
-    std::vector<MotionCandidate> candidates;
-    candidates.reserve(points.size());
-    for (size_t idx = 0; idx < points.size(); ++idx) {
-        if (!valid[idx] || static_cast<int>(step_vectors[idx].size()) != steps) {
-            continue;
-        }
-        cv::Point2f sum(0.0f, 0.0f);
-        for (const auto& step : step_vectors[idx]) {
-            sum += step;
-        }
-        cv::Point2f mean(sum.x / static_cast<float>(steps),
-                         sum.y / static_cast<float>(steps));
-        const float mean_mag = std::sqrt(mean.x * mean.x + mean.y * mean.y);
-        if (mean_mag < kMinMotionPx) {
-            continue;
-        }
-        const float mean_angle = std::atan2(mean.y, mean.x);
-        bool ok = true;
-        for (const auto& step : step_vectors[idx]) {
-            const float mag = std::sqrt(step.x * step.x + step.y * step.y);
-            if (mag < kMinMotionPx * 0.25f) {
-                ok = false;
-                break;
-            }
-            const float angle = std::atan2(step.y, step.x);
-            if (angle_between(angle, mean_angle) > angle_tol) {
-                ok = false;
-                break;
-            }
-            if (std::fabs(mag - mean_mag) > kMagTolPx) {
-                ok = false;
-                break;
-            }
-        }
-        if (!ok) {
-            continue;
-        }
-        candidates.push_back({prev_points[idx], mean});
-    }
-
-    if (candidates.empty()) {
-        return {};
-    }
-
-    std::map<std::pair<int, int>, int> bins;
-    int best_count = 0;
-    std::pair<int, int> best_bin{0, 0};
-    for (const auto& cand : candidates) {
-        const float angle = std::atan2(cand.mean_step.y, cand.mean_step.x);
-        const float mag = std::sqrt(cand.mean_step.x * cand.mean_step.x +
-                                    cand.mean_step.y * cand.mean_step.y);
-        const int angle_key = static_cast<int>(std::round(angle / angle_bin));
-        const int mag_key = static_cast<int>(std::round(mag / kMagBinPx));
-        const std::pair<int, int> key{angle_key, mag_key};
-        const int count = ++bins[key];
-        if (count > best_count) {
-            best_count = count;
-            best_bin = key;
-        }
-    }
-
-    const float best_angle = static_cast<float>(best_bin.first) * angle_bin;
-    const float best_mag = static_cast<float>(best_bin.second) * kMagBinPx;
-    std::vector<cv::Point2f> selected;
-    selected.reserve(candidates.size());
-    for (const auto& cand : candidates) {
-        const float angle = std::atan2(cand.mean_step.y, cand.mean_step.x);
-        const float mag = std::sqrt(cand.mean_step.x * cand.mean_step.x +
-                                    cand.mean_step.y * cand.mean_step.y);
-        if (angle_between(angle, best_angle) <= angle_tol &&
-            std::fabs(mag - best_mag) <= kMagTolPx) {
-            selected.push_back(cand.last_pos);
-        }
-    }
-
-    if (selected.empty()) {
-        return {};
-    }
-
-    motion_points = selected;
-    cv::Rect rect = cv::boundingRect(selected);
-    return clip_rect(cv::Rect2f(rect), base.size());
-}
-
-// Fallback-метод: строит ROI по разнице первого и последнего кадров.
-// Полезен, когда оптический поток не даёт устойчивых точек.
-cv::Rect2f ManualTrackerManager::build_motion_roi_from_diff(
-        const std::vector<cv::Mat>& frames,
-        const cv::Rect& roi) const {
-    if (frames.size() < 2 || roi.width <= 0 || roi.height <= 0) {
-        return {};
-    }
-    const cv::Mat& first = frames.front();
-    const cv::Mat& last = frames.back();
-    cv::Mat diff;
-    cv::absdiff(first, last, diff);
-    cv::Mat roi_diff = diff(roi);
-    cv::threshold(roi_diff, roi_diff, cfg_.motion_diff_threshold, 255, cv::THRESH_BINARY);
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(roi_diff, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    if (contours.empty()) {
-        return {};
-    }
-    cv::Rect best_rect;
-    double best_area = 0.0;
-    for (const auto& contour : contours) {
-        const double area = cv::contourArea(contour);
-        if (area < cfg_.min_area * 0.5) {
-            continue;
-        }
-        if (area > best_area) {
-            best_area = area;
-            best_rect = cv::boundingRect(contour);
-        }
-    }
-    if (best_rect.area() <= 0) {
-        return {};
-    }
-    best_rect.x += roi.x;
-    best_rect.y += roi.y;
-    return clip_rect(cv::Rect2f(best_rect), first.size());
-}
-
 // Создаёт экземпляр OpenCV-трекера на основе настроек.
 // Поддерживает KCF и CSRT.
 cv::Ptr<cv::Tracker> ManualTrackerManager::create_tracker() const {
@@ -488,7 +186,7 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
         return false;
     }
 
-    cv::Rect roi = make_click_roi(frame, x, y);
+    cv::Rect roi = motion_detector_.make_click_roi(frame, x, y);
     if (roi.area() <= 0) {
         return false;
     }
@@ -520,7 +218,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         cv::Mat gray = current_gray;
         for (auto it = pending_clicks_.begin(); it != pending_clicks_.end(); ) {
             it->gray_frames.push_back(gray);
-            const int required = std::max(1, cfg_.motion_frames) + 1;
+            const int required = motion_detector_.required_frames();
             if (static_cast<int>(it->gray_frames.size()) < required) {
                 ++it;
                 continue;
@@ -532,31 +230,10 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             }
 
             std::vector<cv::Point2f> motion_points;
-            cv::Rect2f roi = build_motion_roi_from_sequence(it->gray_frames, it->roi, motion_points);
-            if (roi.area() <= 1.0f) {
-                roi = build_motion_roi_from_diff(it->gray_frames, it->roi);
-            }
-            if (roi.area() > 1.0f) {
-                roi.x -= cfg_.click_padding;
-                roi.y -= cfg_.click_padding;
-                roi.width += cfg_.click_padding * 2.0f;
-                roi.height += cfg_.click_padding * 2.0f;
-                roi = clip_rect(roi, frame.size());
-            }
-
-            if (roi.area() > 1.0f &&
-                roi.area() >= static_cast<float>(cfg_.min_area) &&
-                roi.width >= cfg_.min_width &&
-                roi.height >= cfg_.min_height) {
-                cv::Rect2f tracker_roi = roi;
-                tracker_roi = expand_rect(tracker_roi, static_cast<float>(cfg_.tracker_init_padding));
-                tracker_roi = ensure_min_size(tracker_roi, static_cast<float>(cfg_.tracker_min_size));
-                tracker_roi = clip_rect(tracker_roi, frame.size());
-                if (tracker_roi.area() <= 1.0f) {
-                    it = pending_clicks_.erase(it);
-                    continue;
-                }
-
+            cv::Rect2f motion_roi;
+            cv::Rect2f tracker_roi;
+            if (motion_detector_.build_candidate(it->gray_frames, it->roi, frame.size(),
+                                                 tracker_roi, &motion_points, &motion_roi)) {
                 if (log_cfg_.manual_detector_level_logger) {
                     std::cout << "[MANUAL] capture dynamic click id=" << next_id_ << std::endl;
                 }
@@ -571,6 +248,8 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 track.lost_since_ms = 0;
                 track.visibility_history.fill(true);
                 track.visibility_index = 0;
+                track.last_known_center = rect_center(track.bbox);
+                track.candidate_search.configure(&motion_detector_, cfg_.candidate_search_timeout_ms);
 
                 tracks_.push_back(std::move(track));
                 refresh_targets();
@@ -591,7 +270,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                             cv::fillConvexPoly(flood_fill_mask_, hull_int, cv::Scalar(255), cv::LINE_AA);
                         }
                     } else {
-                        cv::Rect overlay_rect = to_int_rect(roi);
+                        cv::Rect overlay_rect = to_int_rect(motion_roi);
                         overlay_rect &= cv::Rect(0, 0, frame.cols, frame.rows);
                         if (overlay_rect.area() > 0) {
                             flood_fill_mask_(overlay_rect).setTo(255);
@@ -626,6 +305,8 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                     it->last_seen_ms = now_ms;
                     it->lost_since_ms = 0;
                     visible = true;
+                    it->last_known_center = rect_center(it->bbox);
+                    it->candidate_search.reset();
                 }
             }
         }
@@ -634,18 +315,39 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             record_visibility(*it, visible);
             if (!visible && it->lost_since_ms == 0) {
                 it->lost_since_ms = now_ms;
+                it->candidate_search.reset();
+                it->candidate_search.start(it->last_known_center, now_ms, frame);
             }
         }
 
-        if (it->lost_since_ms > 0 &&
-            now_ms - it->lost_since_ms > static_cast<long long>(cfg_.reacquire_delay_ms)) {
-            if (log_cfg_.tracker_level_logger) {
-                std::cout << "[TRK] lost "
-                          << (it->is_dynamic ? "dynamic" : "static")
-                          << " id=" << it->id << std::endl;
+        if (it->lost_since_ms > 0) {
+            if (!frame.empty()) {
+                it->candidate_search.start(it->last_known_center, now_ms, frame);
+                cv::Rect2f candidate_bbox;
+                if (it->candidate_search.update(frame, candidate_bbox)) {
+                    if (log_cfg_.manual_detector_level_logger) {
+                        std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
+                    }
+                    it->bbox = candidate_bbox;
+                    it->tracker = create_tracker();
+                    it->tracker->init(frame, it->bbox);
+                    it->last_seen_ms = now_ms;
+                    it->lost_since_ms = 0;
+                    it->visibility_history.fill(true);
+                    it->visibility_index = 0;
+                    it->last_known_center = rect_center(it->bbox);
+                    it->candidate_search.reset();
+                }
             }
-            it = tracks_.erase(it);
-            continue;
+            if (it->lost_since_ms > 0 && it->candidate_search.timed_out(now_ms)) {
+                if (log_cfg_.tracker_level_logger) {
+                    std::cout << "[TRK] lost "
+                              << (it->is_dynamic ? "dynamic" : "static")
+                              << " id=" << it->id << std::endl;
+                }
+                it = tracks_.erase(it);
+                continue;
+            }
         }
         ++it;
     }

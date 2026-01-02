@@ -1,11 +1,14 @@
 #pragma once
 
+#include <array>
 #include <opencv2/opencv.hpp>
 #include <opencv2/tracking.hpp>
 #include <mutex>
 #include <string>
 #include <vector>
+#include "auto_candidate_search.h"
 #include "config.h"
+#include "manual_motion_detector.h"
 #include "target.h"
 
 class ManualTrackerManager {
@@ -48,6 +51,7 @@ public:
         bool auto_reacquire_nearest = true;
         int reacquire_delay_ms = 2000;
         int reacquire_max_distance_px = 120;
+        int candidate_search_timeout_ms = 1000;
         std::string tracker_type = "KCF";
         float kalman_process_noise = 1e-2f;
         float kalman_measurement_noise = 1e-1f;
@@ -80,6 +84,10 @@ private:
         cv::Rect reacquire_roi;
         std::vector<cv::Mat> reacquire_gray_frames;
         int reacquire_stage = 0;
+        std::array<bool, 3> visibility_history{true, true, true};
+        size_t visibility_index = 0;
+        cv::Point2f last_known_center{0.0f, 0.0f};
+        AutoCandidateSearch candidate_search;
     };
 
     struct PendingClick {
@@ -100,27 +108,13 @@ private:
     cv::Mat flood_fill_overlay_;
     cv::Mat flood_fill_mask_;
     long long overlay_expire_ms_ = 0;
+    ManualMotionDetector motion_detector_;
 
     bool load_config(const toml::table& tbl);
-    cv::Rect2f build_roi_from_click(const cv::Mat& frame, int x, int y);
-    cv::Rect2f find_motion_roi(const cv::Mat& frame, int x, int y);
-    cv::Rect2f build_motion_roi_from_sequence(const std::vector<cv::Mat>& frames, const cv::Rect& roi,
-                                              std::vector<cv::Point2f>& motion_points) const;
-    cv::Rect2f build_motion_roi_from_diff(const std::vector<cv::Mat>& frames, const cv::Rect& roi) const;
-    cv::Rect make_click_roi(const cv::Mat& frame, int x, int y) const;
-    cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) const;
-    cv::Rect make_centered_roi(const cv::Point2f& center, int size, const cv::Size& frame_size) const;
-    std::vector<cv::Rect> find_motion_clusters(const cv::Mat& current_gray,
-                                               const cv::Mat& prev_gray,
-                                               const cv::Rect& search_rect) const;
-    bool try_reacquire_with_motion(ManualTrack& track, const cv::Mat& gray, const cv::Mat& frame,
-                                   long long now_ms, int stage, const cv::Rect& roi, const char* log_label);
-    void init_kalman(ManualTrack& track, const cv::Point2f& center);
-    void predict_kalman(ManualTrack& track);
-    void correct_kalman(ManualTrack& track, const cv::Point2f& center);
     cv::Ptr<cv::Tracker> create_tracker() const;
-    float compute_contrast(const cv::Mat& frame, const cv::Rect2f& roi) const;
-    bool try_reacquire_with_template(ManualTrack& track, const cv::Mat& frame);
+
     bool point_in_rect_with_padding(const cv::Rect2f& rect, int x, int y, int pad) const;
+    void record_visibility(ManualTrack& track, bool visible);
+    bool has_recent_visibility_loss(const ManualTrack& track) const;
     void refresh_targets();
 };

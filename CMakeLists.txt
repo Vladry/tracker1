@@ -31,9 +31,11 @@ endif ()
 set(FIVE_THREADS_SOURCES
         src/detector.cpp
         src/display_loop.cpp
+        src/auto_candidate_search.cpp
         src/frame_store.cpp
         src/main.cpp
         src/manual_tracker_manager.cpp
+        src/manual_motion_detector.cpp
         src/offset_calculator.cpp
         src/overlay.cpp
         src/rtsp_worker.cpp
