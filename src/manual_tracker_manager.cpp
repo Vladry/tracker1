@@ -6,10 +6,14 @@
 #include <string>
 
 namespace {
+    // Возвращает центр прямоугольника.
+    // Используется для запоминания последней позиции цели.
     static inline cv::Point2f rect_center(const cv::Rect2f& rect) {
         return {rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f};
     }
 
+    // Переводит прямоугольник с float координатами в int, округляя границы.
+    // Нужен для отрисовки и операций с матрицами масок.
     static inline cv::Rect to_int_rect(const cv::Rect2f& rect) {
         return cv::Rect(
                 static_cast<int>(std::round(rect.x)),
@@ -19,6 +23,8 @@ namespace {
         );
     }
 
+    // Переводит кадр в градации серого, если он в формате BGR.
+    // Клонирует кадр, чтобы не модифицировать исходные данные.
     static inline cv::Mat to_gray(const cv::Mat& frame) {
         if (frame.channels() == 3) {
             cv::Mat gray;
@@ -28,6 +34,8 @@ namespace {
         return frame.clone();
     }
 
+    // Обрезает прямоугольник по размеру кадра, исключая отрицательные координаты.
+    // Гарантирует корректный bbox перед передчей трекеру или рендереру.
     static inline cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) {
         float x1 = std::max(0.0f, rect.x);
         float y1 = std::max(0.0f, rect.y);
@@ -39,8 +47,53 @@ namespace {
         return {x1, y1, x2 - x1, y2 - y1};
     }
 
+    // Размер кольцевого буфера видимости: три кадра для определения потери цели.
     constexpr size_t kVisibilityHistorySize = 3;
 }
+
+// Поля ManualTrackerManager::Config:
+// - max_targets: максимум активных целей.
+// - click_padding: пиксели вокруг bbox, в которых клик удаляет цель.
+// - motion_diff_threshold: порог бинаризации diff-кадра для движения.
+// - click_capture_size: размер ROI для анализа движения вокруг клика.
+// - motion_frames: число кадров для анализа движения.
+// - overlay_ttl_seconds: время жизни красного оверлея после создания цели.
+// - tracker_init_padding: расширение bbox перед запуском трекера.
+// - tracker_min_size: минимальный размер bbox перед запуском трекера.
+// - motion_min_magnitude: минимальная средняя скорость движения.
+// - motion_mag_tolerance_px: допуск по длине шага движения.
+// - floodfill_fill_overlay: включение оверлея для визуализации зоны движения.
+// - floodfill_lo_diff: нижний порог flood fill (зарезервировано).
+// - floodfill_hi_diff: верхний порог flood fill (зарезервировано).
+// - min_area: минимальная площадь ROI для создания трека.
+// - min_width: минимальная ширина ROI.
+// - min_height: минимальная высота ROI.
+// - tracker_type: имя OpenCV-трекера (KCF/CSRT).
+// Поля ManualTrackerManager::ManualTrack:
+// - id: идентификатор цели.
+// - bbox: текущий bbox цели.
+// - tracker: экземпляр OpenCV-трекера.
+// - age_frames: количество кадров жизни цели.
+// - lost_since_ms: время начала потери цели (0 — цель видна).
+// - visibility_history: история видимости для фильтра потери.
+// - visibility_index: индекс кольцевого буфера истории видимости.
+// - last_known_center: последняя известная позиция центра цели.
+// - candidate_search: авто-поиск кандидата при потере цели.
+// Поля ManualTrackerManager::PendingClick:
+// - roi: ROI вокруг клика для проверки движения.
+// - gray_frames: последовательность кадров для анализа движения.
+// Поля ManualTrackerManager:
+// - cfg_: текущие настройки ручного трекера.
+// - log_cfg_: настройки логирования.
+// - tracks_: список активных треков.
+// - targets_: список целей для выдачи наружу.
+// - pending_clicks_: клики, ожидающие подтверждения движения.
+// - next_id_: счётчик id целей.
+// - mutex_: защита данных от конкурентного доступа.
+// - flood_fill_overlay_: визуальный оверлей зоны движения.
+// - flood_fill_mask_: маска оверлея зоны движения.
+// - overlay_expire_ms_: время истечения оверлея.
+// - motion_detector_: детектор движения в ROI клика.
 
 // Конструктор: поднимает логирование и загружает настройки ручного трекера.
 ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {

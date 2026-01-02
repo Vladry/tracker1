@@ -2,6 +2,8 @@
 #include <cmath>
 
 namespace {
+    // Переводит кадр в серый, если он цветной.
+    // Используется для сравнения последовательности кадров движения.
     static inline cv::Mat to_gray(const cv::Mat& frame) {
         if (frame.channels() == 3) {
             cv::Mat gray;
@@ -12,12 +14,22 @@ namespace {
     }
 }
 
+// Поля AutoCandidateSearch:
+// - detector_: указатель на детектор движения для поиска кандидатов.
+// - started_: был ли поиск инициализирован (зафиксирован last_pos_).
+// - active_: выполняется ли активный сбор кадров для ROI.
+// - start_ms_: время начала поиска (используется для тайминга снаружи).
+// - roi_: текущая область, в которой ищется движение.
+// - gray_frames_: накопленные кадры в оттенках серого для анализа движения.
+// - last_pos_: последняя известная позиция цели, вокруг которой строится ROI.
 
-
+// Назначает детектор движения, который будет использоваться для поиска кандидатов.
 void AutoCandidateSearch::configure(const ManualMotionDetector* detector) {
     detector_ = detector;
 }
 
+// Сбрасывает внутреннее состояние поиска кандидатов.
+// Останавливает активный сбор кадров и очищает буферы.
 void AutoCandidateSearch::reset() {
     started_ = false;
     active_ = false;
@@ -26,6 +38,8 @@ void AutoCandidateSearch::reset() {
     gray_frames_.clear();
 }
 
+// Инициализирует поиск вокруг последней позиции цели и сохраняет базовый кадр.
+// Запуск выполняется один раз, повторные вызовы только поддерживают тайминг.
 void AutoCandidateSearch::start(const cv::Point2f& last_pos, long long now_ms, const cv::Mat& frame) {
     if (!started_) {
         started_ = true;
@@ -49,6 +63,8 @@ void AutoCandidateSearch::start(const cv::Point2f& last_pos, long long now_ms, c
     active_ = true;
 }
 
+// Добавляет новый кадр и пытается подтвердить движение в ROI.
+// Возвращает true и bbox кандидата, когда детектор подтверждает цель.
 bool AutoCandidateSearch::update(const cv::Mat& frame, cv::Rect2f& out_bbox) {
     if (!active_ || !detector_ || frame.empty()) {
         return false;
@@ -71,5 +87,3 @@ bool AutoCandidateSearch::update(const cv::Mat& frame, cv::Rect2f& out_bbox) {
 
     return false;
 }
-
-

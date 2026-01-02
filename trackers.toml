@@ -2,7 +2,7 @@
 
 [manual_tracker]
 # Максимальное количество одновременно отслеживаемых целей.
-max_targets = 5
+max_targets = 10
 
 # Дополнительные пиксели, добавляемые к найденному ROI при клике.
 click_padding = 6
@@ -15,7 +15,7 @@ motion_diff_threshold = 15
 click_capture_size = 80
 
 # Количество последующих кадров для анализа движения пикселей.
-motion_frames = 3
+motion_frames = 2
 
 # Дополнительное расширение bbox при инициализации трекера.
 tracker_init_padding = 2
@@ -33,7 +33,7 @@ motion_mag_tolerance_px = 3.0
 floodfill_fill_overlay = true
 
 # Через сколько секунд убрать красную область выделенного объекта.
-overlay_ttl_seconds = 3
+overlay_ttl_seconds = 1
 
 # Допуски flood fill по яркости.
 floodfill_lo_diff = 20

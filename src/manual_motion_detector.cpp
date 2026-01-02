@@ -4,6 +4,8 @@
 #include <map>
 
 namespace {
+    // Возвращает минимальный угол между направлениями a и b в радианах.
+    // Нужен для проверки стабильности направления движения между кадрами.
     static inline float angle_between(float a, float b) {
         constexpr float kPi = 3.14159265f;
         float diff = std::fabs(a - b);
@@ -13,6 +15,8 @@ namespace {
         return diff;
     }
 
+    // Обрезает прямоугольник до границ кадра.
+    // Используется, чтобы не выходить за пределы изображения после расчётов ROI.
     static inline cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) {
         float x1 = std::max(0.0f, rect.x);
         float y1 = std::max(0.0f, rect.y);
@@ -24,10 +28,14 @@ namespace {
         return {x1, y1, x2 - x1, y2 - y1};
     }
 
+    // Расширяет прямоугольник на pad пикселей по всем сторонам.
+    // Применяется при создании bbox для инициализации трекера.
     static inline cv::Rect2f expand_rect(const cv::Rect2f& rect, float pad) {
         return cv::Rect2f(rect.x - pad, rect.y - pad, rect.width + pad * 2.0f, rect.height + pad * 2.0f);
     }
 
+    // Гарантирует минимальный размер прямоугольника.
+    // Центр сохраняется, чтобы не смещать цель при увеличении.
     static inline cv::Rect2f ensure_min_size(const cv::Rect2f& rect, float min_size) {
         if (rect.width >= min_size && rect.height >= min_size) {
             return rect;
@@ -38,10 +46,29 @@ namespace {
     }
 }
 
+// Поля ManualMotionDetectorConfig:
+// - click_capture_size: сторона ROI вокруг клика для поиска движения.
+// - motion_frames: количество кадров для анализа движения.
+// - motion_diff_threshold: порог бинаризации diff-кадра.
+// - click_padding: дополнительный паддинг вокруг найденной области движения.
+// - tracker_init_padding: расширение bbox при старте OpenCV-трекера.
+// - tracker_min_size: минимальная сторона bbox для инициализации трекера.
+// - motion_min_magnitude: минимальная средняя длина вектора движения.
+// - motion_angle_tolerance_deg: допуск по углу движения (в градусах).
+// - motion_mag_tolerance_px: допуск по длине шага (в пикселях).
+// - min_area: минимальная площадь ROI для создания кандидата.
+// - min_width: минимальная ширина ROI.
+// - min_height: минимальная высота ROI.
+// Поле ManualMotionDetector:
+// - cfg_: активная конфигурация поиска движения и пороги фильтрации.
+
+// Возвращает число кадров, необходимых для анализа движения (motion_frames + базовый кадр).
 int ManualMotionDetector::required_frames() const {
     return std::max(1, cfg_.motion_frames) + 1;
 }
 
+// Формирует ROI вокруг клика, ограничивая его границами кадра.
+// Это исходная область, в которой проверяется наличие движения.
 cv::Rect ManualMotionDetector::make_click_roi(const cv::Mat& frame, int x, int y) const {
     if (frame.empty()) {
         return {};
@@ -58,6 +85,8 @@ cv::Rect ManualMotionDetector::make_click_roi(const cv::Mat& frame, int x, int y
     return {x1, y1, x2 - x1, y2 - y1};
 }
 
+// Строит ROI движения на основе оптического потока между кадрами.
+// Возвращает bbox движения и заполняет motion_points финальными точками движения.
 cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
         const std::vector<cv::Mat>& frames,
         const cv::Rect& roi,
@@ -117,6 +146,9 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
         prev_points = curr_points;
     }
 
+    // Кандидат движения:
+    // - last_pos: последняя позиция точки после трекинга.
+    // - mean_step: усреднённый вектор движения по всем кадрам.
     struct MotionCandidate {
         cv::Point2f last_pos;
         cv::Point2f mean_step;
@@ -206,6 +238,8 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
     return clip_rect(cv::Rect2f(rect), base.size());
 }
 
+// Строит ROI движения по разнице первого и последнего кадров.
+// Используется как запасной путь, если оптический поток не дал результата.
 cv::Rect2f ManualMotionDetector::build_motion_roi_from_diff(
         const std::vector<cv::Mat>& frames,
         const cv::Rect& roi) const {
@@ -243,6 +277,11 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_diff(
     return clip_rect(cv::Rect2f(best_rect), first.size());
 }
 
+// Пытается построить кандидата трека по серии кадров.
+// Возвращает true, если найден пригодный bbox для трекера.
+// out_tracker_roi — bbox для инициализации трекера,
+// motion_points — опциональные точки движения,
+// motion_roi_out — опциональный bbox движения до паддинга.
 bool ManualMotionDetector::build_candidate(
         const std::vector<cv::Mat>& gray_frames,
         const cv::Rect& roi,
