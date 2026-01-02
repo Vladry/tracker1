@@ -75,7 +75,6 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.fallback_box_size = read_required<int>(*cfg, "fallback_box_size");
         cfg_.max_area_ratio = read_required<float>(*cfg, "max_area_ratio");
         cfg_.motion_diff_threshold = read_required<int>(*cfg, "motion_diff_threshold");
-        cfg_.click_search_radius = read_required<int>(*cfg, "click_search_radius");
         cfg_.click_capture_size = read_required<int>(*cfg, "click_capture_size");
         cfg_.motion_frames = read_required<int>(*cfg, "motion_frames");
         cfg_.overlay_ttl_seconds = read_required<int>(*cfg, "overlay_ttl_seconds");
@@ -99,7 +98,6 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
                   << " fallback_box_size=" << cfg_.fallback_box_size
                   << " max_area_ratio=" << cfg_.max_area_ratio
                   << " motion_diff_threshold=" << cfg_.motion_diff_threshold
-                  << " click_search_radius=" << cfg_.click_search_radius
                   << " click_capture_size=" << cfg_.click_capture_size
                   << " motion_frames=" << cfg_.motion_frames
                   << " overlay_ttl_seconds=" << cfg_.overlay_ttl_seconds
@@ -167,7 +165,7 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
     std::lock_guard<std::mutex> lock(mutex_);
     (void)now_ms;
 
-    // Снчала проверяем, не кликнули ли по существующему боксу — тогда удаляем цель.
+    // Сначала проверяем, не кликнули ли по существующему боксу — тогда удаляем цель.
     for (auto it = tracks_.begin(); it != tracks_.end(); ++it) {
         if (point_in_rect_with_padding(it->bbox, x, y, cfg_.click_padding)) {
             tracks_.erase(it);

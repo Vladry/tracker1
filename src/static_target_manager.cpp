@@ -29,10 +29,8 @@ bool StaticTargetManager::load_config(const toml::table& tbl) {
         cfg_.click_padding = read_required<int>(*cfg, "click_padding");
         cfg_.fallback_box_size = read_required<int>(*cfg, "fallback_box_size");
         cfg_.max_area_ratio = read_required<float>(*cfg, "max_area_ratio");
-        cfg_.click_search_radius = read_required<int>(*cfg, "click_search_radius");
         cfg_.click_equalize = read_required<bool>(*cfg, "click_equalize");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
-        cfg_.remove_padding = read_required<int>(*cfg, "remove_padding");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
         cfg_.overlay_ttl_seconds = read_required<int>(*cfg, "overlay_ttl_seconds");
         cfg_.min_area = read_required<int>(*cfg, "min_area");
@@ -44,7 +42,6 @@ bool StaticTargetManager::load_config(const toml::table& tbl) {
                   << " remove_padding=" << cfg_.remove_padding
                   << " fallback_box_size=" << cfg_.fallback_box_size
                   << " max_area_ratio=" << cfg_.max_area_ratio
-                  << " click_search_radius=" << cfg_.click_search_radius
                   << " click_equalize=" << (cfg_.click_equalize ? "true" : "false")
                   << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
                   << " floodfill_hi_diff=" << cfg_.floodfill_hi_diff
@@ -92,13 +89,7 @@ cv::Rect2f StaticTargetManager::build_roi_from_click(const cv::Mat& frame, int x
         gray = frame;
     }
 
-    const int search_radius = std::max(1, cfg_.click_search_radius);
-    const int x1 = std::max(0, x - search_radius);
-    const int y1 = std::max(0, y - search_radius);
-    const int x2 = std::min(gray.cols, x + search_radius);
-    const int y2 = std::min(gray.rows, y + search_radius);
-
-    cv::Rect search_rect(x1, y1, x2 - x1, y2 - y1);
+    cv::Rect search_rect(0, 0, gray.cols, gray.rows);
     if (search_rect.width <= 0 || search_rect.height <= 0) {
         return {};
     }
