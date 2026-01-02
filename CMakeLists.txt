@@ -29,22 +29,22 @@ if (NOT RKNN_INCLUDE_DIR)
 endif ()
 
 set(FIVE_THREADS_SOURCES
-        src/detector.cpp
+#        src/detector.cpp
         src/display_loop.cpp
         src/auto_candidate_search.cpp
         src/frame_store.cpp
         src/main.cpp
         src/manual_tracker_manager.cpp
         src/manual_motion_detector.cpp
-        src/offset_calculator.cpp
+#        src/offset_calculator.cpp
         src/overlay.cpp
         src/rtsp_worker.cpp
         src/rtsp_watch_dog.cpp
         src/static_box_manager.cpp
         src/static_target_manager.cpp
         src/tracker_manager.cpp
-        src/merge_bbox.cpp
-        src/yolo_postprocess.cpp
+#        src/merge_bbox.cpp
+#        src/yolo_postprocess.cpp
 )
 
 add_executable(Five_Threads ${FIVE_THREADS_SOURCES})
