@@ -27,7 +27,6 @@ bool StaticTargetManager::load_config(const toml::table& tbl) {
         }
         cfg_.max_targets = read_required<int>(*cfg, "max_targets");
         cfg_.click_padding = read_required<int>(*cfg, "click_padding");
-        cfg_.remove_padding = read_required<int>(*cfg, "remove_padding");
         cfg_.fallback_box_size = read_required<int>(*cfg, "fallback_box_size");
         cfg_.max_area_ratio = read_required<float>(*cfg, "max_area_ratio");
         cfg_.click_search_radius = read_required<int>(*cfg, "click_search_radius");
