@@ -13,6 +13,7 @@ namespace {
 }
 
 
+
 void AutoCandidateSearch::configure(const ManualMotionDetector* detector) {
     detector_ = detector;
 }

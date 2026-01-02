@@ -77,19 +77,10 @@ private:
         // На RK (mppvideodec) типичный стабильный формат для OpenCV: NV12.
         std::string caps_force = "video/x-raw,format=NV12";
 
-        // Таймаут ожидания перехода пайплайна в PLAYING на старте (мс).
-        // Если камера/сеть "тупит", лучше явно выйти с ошибкой, чем зависнуть.
-        int start_timeout_ms = 3000;
-
-        // Таймаут ожидания перехода в NULL на остановке (мс).
-        int stop_timeout_ms = 2000;
-
         // Пауза после stop() перед повторным стартом (мс).
         // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
         int restart_delay_ms = 300;
 
-        // Подробные логи в stderr.
-        bool verbose = true;
         bool logger_on = false;
 
     };

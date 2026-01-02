@@ -59,7 +59,6 @@ void StaticBoxManager::on_mouse_click(
             sb.last_dynamic_id = ids[i];
             sb.confidence = 1.0f;
             sb.state = static_box_state::attached;
-            sb.last_seen = std::chrono::steady_clock::now();
             boxes_.push_back(sb);
             return;
         }
@@ -70,8 +69,6 @@ void StaticBoxManager::update(
         const std::vector <cv::Rect2f> &boxes,
         const std::vector<int> &ids
 ) {
-    auto now = std::chrono::steady_clock::now();
-
     update_trajectories(boxes, ids);
 
     for (auto &sb: boxes_) {
@@ -85,7 +82,6 @@ void StaticBoxManager::update(
 
         if (parent_index >= 0) {
             sb.rect = boxes[static_cast<size_t>(parent_index)];
-            sb.last_seen = now;
             sb.missed_frames = 0;
             sb.state = static_box_state::attached;
             sb.confidence = std::min(1.0f, sb.confidence + 0.1f);
@@ -116,7 +112,6 @@ void StaticBoxManager::update(
             if (best >= 0) {
                 sb.rect = boxes[best];
                 sb.last_dynamic_id = ids[best];
-                sb.last_seen = now;
                 sb.missed_frames = 0;
                 sb.state = static_box_state::pending_rebind;
                 sb.confidence = 0.5f;
@@ -201,7 +196,6 @@ bool StaticBoxManager::load_static_rebind_config(const toml::table &tbl) {
             throw std::runtime_error("missing [static_rebind] table");
         }
         cfg_.auto_rebind = read_required<bool>(*static_rebind, "auto_rebind"); //TODO
-        cfg_.rebind_timeout_ms = read_required<int>(*static_rebind, "rebind_timeout_ms");
         cfg_.parent_iou_th = read_required<float>(*static_rebind, "parent_iou_th");
         cfg_.reattach_score_th = read_required<float>(*static_rebind, "reattach_score_th");
 

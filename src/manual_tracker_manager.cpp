@@ -71,14 +71,14 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         }
         cfg_.max_targets = read_required<int>(*cfg, "max_targets");
         cfg_.click_padding = read_required<int>(*cfg, "click_padding");
-        cfg_.fallback_box_size = read_required<int>(*cfg, "fallback_box_size");
-        cfg_.max_area_ratio = read_required<float>(*cfg, "max_area_ratio");
         cfg_.motion_diff_threshold = read_required<int>(*cfg, "motion_diff_threshold");
         cfg_.click_capture_size = read_required<int>(*cfg, "click_capture_size");
+        cfg_.motion_frames = read_required<int>(*cfg, "motion_frames");
         cfg_.overlay_ttl_seconds = read_required<int>(*cfg, "overlay_ttl_seconds");
         cfg_.tracker_init_padding = read_required<int>(*cfg, "tracker_init_padding");
         cfg_.tracker_min_size = read_required<int>(*cfg, "tracker_min_size");
-        cfg_.click_equalize = read_required<bool>(*cfg, "click_equalize");
+        cfg_.motion_min_magnitude = read_required<float>(*cfg, "motion_min_magnitude");
+        cfg_.motion_mag_tolerance_px = read_required<float>(*cfg, "motion_mag_tolerance_px");
         cfg_.floodfill_fill_overlay = read_required<bool>(*cfg, "floodfill_fill_overlay");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
@@ -86,7 +86,6 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.min_width = read_required<int>(*cfg, "min_width");
         cfg_.min_height = read_required<int>(*cfg, "min_height");
         cfg_.tracker_type = read_required<std::string>(*cfg, "tracker_type");
-        cfg_.candidate_search_timeout_ms = read_required<int>(*cfg, "candidate_search_timeout_ms");
         return true;
     } catch (const std::exception& e) {
         std::cerr << "[MANUAL] config load failed: " << e.what() << std::endl;
@@ -207,10 +206,8 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 ManualTrack track;
                 track.id = next_id_++;
                 track.bbox = tracker_roi;
-                track.is_dynamic = true;
                 track.tracker = create_tracker();
                 track.tracker->init(frame, track.bbox);
-                track.last_seen_ms = now_ms;
                 track.lost_since_ms = 0;
                 track.visibility_history.fill(true);
                 track.visibility_index = 0;
@@ -268,7 +265,6 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             if (it->tracker->update(frame, new_box)) {
                 it->bbox = ::clip_rect(cv::Rect2f(new_box), frame.size());
                 if (it->bbox.area() > 1.0f) {
-                    it->last_seen_ms = now_ms;
                     it->lost_since_ms = 0;
                     visible = true;
                     it->last_known_center = rect_center(it->bbox);
@@ -297,7 +293,6 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                     it->bbox = candidate_bbox;
                     it->tracker = create_tracker();
                     it->tracker->init(frame, it->bbox);
-                    it->last_seen_ms = now_ms;
                     it->lost_since_ms = 0;
                     it->visibility_history.fill(true);
                     it->visibility_index = 0;
@@ -324,11 +319,6 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         constexpr double kOverlayAlpha = 0.7;
         cv::addWeighted(frame, 1.0 - kOverlayAlpha, flood_fill_overlay_, kOverlayAlpha, 0.0, blended);
         blended.copyTo(frame, flood_fill_mask_);
-    }
-    if (frame.channels() == 3) {
-        cv::cvtColor(frame, prev_gray_, cv::COLOR_BGR2GRAY);
-    } else {
-        prev_gray_ = frame.clone();
     }
 }
 

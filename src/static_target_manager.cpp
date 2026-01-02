@@ -217,8 +217,6 @@ bool StaticTargetManager::handle_right_click(int x, int y, const cv::Mat& frame,
     StaticTarget target;
     target.id = next_id_++;
     target.bbox = roi;
-    target.contrast = contrast;
-    target.created_ms = now_ms;
     targets_.push_back(std::move(target));
 
     if (!flood_mask.empty()) {

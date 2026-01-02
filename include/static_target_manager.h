@@ -9,8 +9,6 @@
 struct StaticTarget {
     int id = -1;
     cv::Rect2f bbox;
-    float contrast = 0.0f;
-    long long created_ms = 0;
 };
 
 class StaticTargetManager {

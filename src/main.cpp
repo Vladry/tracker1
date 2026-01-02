@@ -13,17 +13,12 @@
 #include <thread>
 #include "display_loop.h"
 #include "other_handlers.h"
-#include "rtsp_watch_dog.h"
 
 #define SHOW_IDS = false;
 
 
 std::atomic<bool> g_running{true};
 std::atomic<bool> g_rtsp_restart_requested{false};
-
-// Момент времени (в миллисекундах steady_clock) когда мы последний раз
-// получили кадр от RTSP. Используется watchdog'ом.
-static std::atomic<long long> g_last_frame_ms{0};
 
 // Текущее время по steady_clock в миллисекундах (монотонное, без скачков времени).
 static inline long long now_steady_ms() {
@@ -53,9 +48,6 @@ static toml::table load_config_tables() {
 
     const toml::table logging = toml::parse_file("logging.toml");
     merge_table(logging, "logging");
-
-    const toml::table motion_detector = toml::parse_file("motion_detector.toml");
-    merge_table(motion_detector, "motion_detector");
 
     const toml::table overlay = toml::parse_file("overlay.toml");
     merge_table(overlay, "overlay");
@@ -126,25 +118,18 @@ int main(int argc, char *argv[]) {
 
     FrameStore raw_store;
     FrameStore ui_store;
-    RtspWatchDog rtsp_watchdog;
 
 
     // получаем конфигурации из всех файлов.toml
     toml::table tbl = load_config_tables();
     load_logging_config(tbl, g_logging);
     RtspWorker rtsp(raw_store, tbl);
-    load_rtsp_watchdog(tbl, rtsp_watchdog);
     ManualTrackerManager tracker(tbl);
     StaticTargetManager static_targets(tbl);
     OverlayRenderer overlay(tbl);
     rtsp.start();
 
 
-
-    const long long app_start_ms = now_steady_ms();
-    g_last_frame_ms.store(app_start_ms, std::memory_order_relaxed);
-
-    std::atomic<long long> last_restart_ms{app_start_ms - 100000};
 
     std::thread control_thread([&]() {
         std::cout << "[CTRL] Control thread started" << std::endl;
@@ -155,43 +140,7 @@ int main(int argc, char *argv[]) {
                 std::cout << "[CTRL] Manual RTSP restart" << std::endl;
                 rtsp.stop();
                 rtsp.start();
-                last_restart_ms.store(now_steady_ms(), std::memory_order_relaxed);
-                g_last_frame_ms.store(now_steady_ms(), std::memory_order_relaxed);
             }
-
-            auto rtsp_watchdog_tick = [&](){
-                // Watchdog: если давно нет кадров — перезапускаем RTSP
-                const long long now_ms = now_steady_ms();
-                const long long since_start = now_ms - app_start_ms;
-                const long long no_frame_ms = now_ms - g_last_frame_ms.load(std::memory_order_relaxed);
-                const long long since_restart = now_ms - last_restart_ms.load(std::memory_order_relaxed);
-
-
-                // =====================================================================
-                // Control-поток: watchdog RTSP + ручной рестарт по клавише R.
-                // Здесь выполняются тяжёлые операции stop/start RTSP, чтобы НЕ блокировать UI.
-                // =====================================================================
-                static const int WD_NO_FRAME_TIMEOUT_MS = rtsp_watchdog.no_frame_timeout_ms
-                                                          ? rtsp_watchdog.no_frame_timeout_ms : 1500;
-                static const int WD_RESTART_COOLDOWN_MS = rtsp_watchdog.restart_cooldown_ms
-                                                          ? rtsp_watchdog.restart_cooldown_ms : 1000;
-                static const int WD_STARTUP_GRACE_MS = rtsp_watchdog.startup_grace_ms ? rtsp_watchdog.startup_grace_ms
-                                                                                      : 1500;
-
-                if (since_start > WD_STARTUP_GRACE_MS &&
-                    no_frame_ms > WD_NO_FRAME_TIMEOUT_MS &&
-                    since_restart > WD_RESTART_COOLDOWN_MS) {
-
-                    std::cout << "[WATCHDOG] No frames for " << no_frame_ms
-                              << " ms -> restarting RTSP" << std::endl;
-
-                    rtsp.stop();
-                    rtsp.start();
-                    last_restart_ms.store(now_ms, std::memory_order_relaxed);
-                    g_last_frame_ms.store(now_ms, std::memory_order_relaxed);
-                }
-            };
-            rtsp_watchdog_tick();
 
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
@@ -206,12 +155,9 @@ int main(int argc, char *argv[]) {
         cv::Mat frame;
         while (g_running.load(std::memory_order_relaxed)) {
 
-            if (!raw_store.waitFrame(frame, 100)) {
+            if (!raw_store.waitFrame(frame)) {
                 continue;
             }
-
-            // Кадр получен: обновляем таймер watchdog-а.
-            g_last_frame_ms.store(now_steady_ms(), std::memory_order_relaxed);
 
             {
                 std::lock_guard<std::mutex> lock(g_last_frame_mutex);
@@ -233,16 +179,16 @@ int main(int argc, char *argv[]) {
     DisplayLoop display_loop(ui_store);
     display_loop.run();   // ЕДИНСТВЕННЫЙ UI-LOOP
 
-    if (tracker_thread.joinable()) tracker_thread.join();
-
-
-// Запрос на остановку RTSP/потоков уже выставлен через g_running.
-    // Аккуратно завершаем RTSP.
-    rtsp.stop();
-
     // Будим возможные ожидания по кадрам.
     raw_store.stop();
     ui_store.stop();
+
+    if (tracker_thread.joinable()) tracker_thread.join();
+
+
+    // Запрос на остановку RTSP/потоков уже выставлен через g_running.
+    // Аккуратно завершаем RTSP.
+    rtsp.stop();
 
     // Дожидаемся control-потока, чтобы он не работал с rtsp после уничтожения.
     if (control_thread.joinable()) control_thread.join();

@@ -2,7 +2,6 @@
 #include <opencv2/opencv.hpp>
 #include <condition_variable>
 #include <mutex>
-#include <chrono>
 
 // FrameStore: хранит "последний кадр".
 // Потребитель ждёт (sleep) на condition_variable.
@@ -17,9 +16,9 @@ public:
     // Optional: если вам удобнее пушить по const&
     void pushFrame(const cv::Mat& frame);
 
-    // Consumer side (UI/tracker): ждёт новый кадр до timeout_ms.
-    // Возвращает true если кадр получен, false если timeout или stop().
-    bool waitFrame(cv::Mat& out, int timeout_ms);
+    // Consumer side (UI/tracker): ждёт новый кадр.
+    // Возвращает true если кадр получен, false если stop().
+    bool waitFrame(cv::Mat& out);
 
     // Останавливает ожидания, будит все ожидающие потоки.
     void stop();

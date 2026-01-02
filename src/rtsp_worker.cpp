@@ -90,25 +90,16 @@ void RtspWorker::threadMain() {
         return;
     }
 
-    gst_element_set_state(pipeline_, GST_STATE_PLAYING);
-
-    {
-        GstState cur = GST_STATE_NULL, pending = GST_STATE_NULL;
-        GstStateChangeReturn ret = gst_element_get_state(
-                pipeline_, &cur, &pending,
-                (GstClockTime)cfg_.start_timeout_ms * GST_MSECOND
-        );
-
-        if (ret == GST_STATE_CHANGE_FAILURE) {
-            if (cfg_.logger_on) {
-                std::cerr << "RTSP: state change FAILURE on start" << std::endl;
-                std::cerr.flush();
-            }
-            state_.store(State::ERROR, std::memory_order_release);
-            teardownPipeline();
-            running_.store(false, std::memory_order_release);
-            return;
+    GstStateChangeReturn ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+    if (ret == GST_STATE_CHANGE_FAILURE) {
+        if (cfg_.logger_on) {
+            std::cerr << "RTSP: state change FAILURE on start" << std::endl;
+            std::cerr.flush();
         }
+        state_.store(State::ERROR, std::memory_order_release);
+        teardownPipeline();
+        running_.store(false, std::memory_order_release);
+        return;
     }
 
     state_.store(State::RUNNING, std::memory_order_release);
@@ -230,12 +221,6 @@ void RtspWorker::teardownPipeline() {
 
     gst_element_set_state(pipeline_, GST_STATE_NULL);
 
-    GstState cur = GST_STATE_NULL, pending = GST_STATE_NULL;
-    gst_element_get_state(
-            pipeline_, &cur, &pending,
-            (GstClockTime)cfg_.stop_timeout_ms * GST_MSECOND
-    );
-
     {
         std::lock_guard<std::mutex> lk(bus_mu_);
         if (bus_) {
@@ -344,7 +329,6 @@ bool RtspWorker::load_rtsp_config(toml::table &tbl) {
         cfg_.latency_ms = read_required<int>(*rtsp, "latency_ms");
         cfg_.timeout_us = read_required<std::uint64_t>(*rtsp, "timeout_us");
         cfg_.tcp_timeout_us = read_required<std::uint64_t>(*rtsp, "tcp_timeout_us");
-        cfg_.verbose = read_required<bool>(*rtsp, "verbose");
         LoggingConfig log_cfg{};
         load_logging_config(tbl, log_cfg);
         cfg_.logger_on = log_cfg.rtsp_level_logger_on;

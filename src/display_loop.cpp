@@ -52,7 +52,7 @@ void DisplayLoop::run()
     while (g_running.load(std::memory_order_relaxed)) {
 
         // Ждём кадр из FrameStore (реальный API)
-        const bool ok = frames_.waitFrame(frame, cfg_.wait_frame_ms);
+        const bool ok = frames_.waitFrame(frame);
 
         if (ok && !frame.empty()) {
             if (!window_primed) {

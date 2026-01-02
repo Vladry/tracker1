@@ -2,7 +2,6 @@
 
 #include <opencv2/opencv.hpp>
 #include <vector>
-#include <chrono>
 #include <deque>
 #include <unordered_map>
 #include "config.h"
@@ -22,8 +21,6 @@ struct static_box {
     int missed_frames = 0;
 
     static_box_state state;
-
-    std::chrono::steady_clock::time_point last_seen;
 };
 
 
@@ -60,9 +57,6 @@ private:
 // ============================================================================
         // Автоматическая перепривязка static bbox
         bool auto_rebind = true;
-
-        // Таймаут ожидания новой цели (мс)
-        int rebind_timeout_ms = 1200;
 
         // IoU-порог родительской привязки
         float parent_iou_th = 0.15f;

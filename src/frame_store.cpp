@@ -22,7 +22,7 @@ void FrameStore::pushFrame(const cv::Mat& frame) {
     cv_.notify_all();   // <-- важно
 }
 
-bool FrameStore::waitFrame(cv::Mat& out, int timeout_ms) {
+bool FrameStore::waitFrame(cv::Mat& out) {
     std::unique_lock<std::mutex> lk(m_);
     const uint64_t my_seq = seq_;
 
@@ -30,9 +30,7 @@ bool FrameStore::waitFrame(cv::Mat& out, int timeout_ms) {
         return stop_ || (has_frame_ && seq_ != my_seq);
     };
 
-    if (!cv_.wait_for(lk, std::chrono::milliseconds(timeout_ms), pred)) {
-        return false; // timeout
-    }
+    cv_.wait(lk, pred);
     if (stop_) return false;
 
     // Вариант 1 (быстрее): shallow copy. Подходит, если out используется сразу и вы не держите его "долго".
