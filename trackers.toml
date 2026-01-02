@@ -133,7 +133,7 @@ max_lost_ms = 2000
 auto_reacquire_nearest = true
 
 # Задержка (мс) до переназначения потерянной цели.
-reacquire_delay_ms = 1000
+reacquire_delay_ms = 100
 
 # Максимальное время (мс) для поиска нового кандидата после потери цели.
 candidate_search_timeout_ms = 1000

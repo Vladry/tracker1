@@ -167,7 +167,7 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
     std::lock_guard<std::mutex> lock(mutex_);
     (void)now_ms;
 
-    // Сначала проверяем, не кликнули ли по существующему боксу — тогда удаляем цель.
+    // Снчала проверяем, не кликнули ли по существующему боксу — тогда удаляем цель.
     for (auto it = tracks_.begin(); it != tracks_.end(); ++it) {
         if (point_in_rect_with_padding(it->bbox, x, y, cfg_.click_padding)) {
             tracks_.erase(it);
@@ -298,7 +298,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         if (!frame.empty() && it->tracker) {
             cv::Rect new_box;
             if (it->tracker->update(frame, new_box)) {
-                it->bbox = clip_rect(cv::Rect2f(new_box), frame.size());
+                it->bbox = ::clip_rect(cv::Rect2f(new_box), frame.size());
                 if (it->bbox.area() > 1.0f) {
                     it->last_seen_ms = now_ms;
                     it->lost_since_ms = 0;
