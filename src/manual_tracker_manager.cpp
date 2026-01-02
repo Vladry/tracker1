@@ -54,7 +54,6 @@ ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {
     motion_cfg.tracker_init_padding = cfg_.tracker_init_padding;
     motion_cfg.tracker_min_size = cfg_.tracker_min_size;
     motion_cfg.motion_min_magnitude = cfg_.motion_min_magnitude;
-    motion_cfg.motion_angle_tolerance_deg = cfg_.motion_angle_tolerance_deg;
     motion_cfg.motion_mag_tolerance_px = cfg_.motion_mag_tolerance_px;
     motion_cfg.min_area = cfg_.min_area;
     motion_cfg.min_width = cfg_.min_width;
@@ -76,13 +75,9 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.max_area_ratio = read_required<float>(*cfg, "max_area_ratio");
         cfg_.motion_diff_threshold = read_required<int>(*cfg, "motion_diff_threshold");
         cfg_.click_capture_size = read_required<int>(*cfg, "click_capture_size");
-        cfg_.motion_frames = read_required<int>(*cfg, "motion_frames");
         cfg_.overlay_ttl_seconds = read_required<int>(*cfg, "overlay_ttl_seconds");
         cfg_.tracker_init_padding = read_required<int>(*cfg, "tracker_init_padding");
         cfg_.tracker_min_size = read_required<int>(*cfg, "tracker_min_size");
-        cfg_.motion_min_magnitude = read_required<float>(*cfg, "motion_min_magnitude");
-        cfg_.motion_angle_tolerance_deg = read_required<float>(*cfg, "motion_angle_tolerance_deg");
-        cfg_.motion_mag_tolerance_px = read_required<float>(*cfg, "motion_mag_tolerance_px");
         cfg_.click_equalize = read_required<bool>(*cfg, "click_equalize");
         cfg_.floodfill_fill_overlay = read_required<bool>(*cfg, "floodfill_fill_overlay");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
@@ -90,33 +85,8 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.min_area = read_required<int>(*cfg, "min_area");
         cfg_.min_width = read_required<int>(*cfg, "min_width");
         cfg_.min_height = read_required<int>(*cfg, "min_height");
-        cfg_.reacquire_delay_ms = read_required<int>(*cfg, "reacquire_delay_ms");
         cfg_.tracker_type = read_required<std::string>(*cfg, "tracker_type");
         cfg_.candidate_search_timeout_ms = read_required<int>(*cfg, "candidate_search_timeout_ms");
-        std::cout << "[MANUAL] config: max_targets=" << cfg_.max_targets
-                  << " click_padding=" << cfg_.click_padding
-                  << " fallback_box_size=" << cfg_.fallback_box_size
-                  << " max_area_ratio=" << cfg_.max_area_ratio
-                  << " motion_diff_threshold=" << cfg_.motion_diff_threshold
-                  << " click_capture_size=" << cfg_.click_capture_size
-                  << " motion_frames=" << cfg_.motion_frames
-                  << " overlay_ttl_seconds=" << cfg_.overlay_ttl_seconds
-                  << " tracker_init_padding=" << cfg_.tracker_init_padding
-                  << " tracker_min_size=" << cfg_.tracker_min_size
-                  << " motion_min_magnitude=" << cfg_.motion_min_magnitude
-                  << " motion_angle_tolerance_deg=" << cfg_.motion_angle_tolerance_deg
-                  << " motion_mag_tolerance_px=" << cfg_.motion_mag_tolerance_px
-                  << " click_equalize=" << (cfg_.click_equalize ? "true" : "false")
-                  << " floodfill_fill_overlay=" << (cfg_.floodfill_fill_overlay ? "true" : "false")
-                  << " floodfill_lo_diff=" << cfg_.floodfill_lo_diff
-                  << " floodfill_hi_diff=" << cfg_.floodfill_hi_diff
-                  << " min_area=" << cfg_.min_area
-                  << " min_width=" << cfg_.min_width
-                  << " min_height=" << cfg_.min_height
-                  << " reacquire_delay_ms=" << cfg_.reacquire_delay_ms
-                  << " candidate_search_timeout_ms=" << cfg_.candidate_search_timeout_ms
-                  << " tracker_type=" << cfg_.tracker_type
-                  << std::endl;
         return true;
     } catch (const std::exception& e) {
         std::cerr << "[MANUAL] config load failed: " << e.what() << std::endl;
@@ -245,7 +215,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 track.visibility_history.fill(true);
                 track.visibility_index = 0;
                 track.last_known_center = rect_center(track.bbox);
-                track.candidate_search.configure(&motion_detector_, cfg_.candidate_search_timeout_ms);
+                track.candidate_search.configure(&motion_detector_);
 
                 tracks_.push_back(std::move(track));
                 refresh_targets();
@@ -334,15 +304,6 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                     it->last_known_center = rect_center(it->bbox);
                     it->candidate_search.reset();
                 }
-            }
-            if (it->lost_since_ms > 0 && it->candidate_search.timed_out(now_ms)) {
-                if (log_cfg_.tracker_level_logger) {
-                    std::cout << "[TRK] lost "
-                              << (it->is_dynamic ? "dynamic" : "static")
-                              << " id=" << it->id << std::endl;
-                }
-                it = tracks_.erase(it);
-                continue;
             }
         }
         ++it;

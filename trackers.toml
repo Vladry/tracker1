@@ -47,21 +47,6 @@ tracker_motion_min_ratio = 0.02
 # Количество кадров, прежде чем считать bbox потерянным по малому движению.
 tracker_motion_grace_frames = 3
 
-# Время жизни bbox после потери (мс).
-lost_bbox_ttl_ms = 1000
-
-# Максимальная дистанция для fallback-пере-захвата (приоритет 3).
-reacquire_fallback_max_distance_px = 1300
-
-# Радиус ожидания (Калман) для пере-захвата по движению.
-reacquire_kalman_radius_px = 120
-
-# Радиус поиска ближайших движущихся целей после ожидания.
-reacquire_near_radius_px = 200
-
-# Использовать Калман для предсказания позиции.
-use_kalman = false
-
 # Выравнивать контраст в области клика перед flood fill.
 click_equalize = true
 

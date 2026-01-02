@@ -12,12 +12,9 @@ namespace {
     }
 }
 
-AutoCandidateSearch::AutoCandidateSearch(const ManualMotionDetector* detector, int timeout_ms)
-        : detector_(detector), timeout_ms_(timeout_ms) {}
 
-void AutoCandidateSearch::configure(const ManualMotionDetector* detector, int timeout_ms) {
+void AutoCandidateSearch::configure(const ManualMotionDetector* detector) {
     detector_ = detector;
-    timeout_ms_ = timeout_ms;
 }
 
 void AutoCandidateSearch::reset() {
@@ -74,9 +71,4 @@ bool AutoCandidateSearch::update(const cv::Mat& frame, cv::Rect2f& out_bbox) {
     return false;
 }
 
-bool AutoCandidateSearch::timed_out(long long now_ms) const {
-    if (!started_) {
-        return false;
-    }
-    return (now_ms - start_ms_) > static_cast<long long>(timeout_ms_);
-}
+
