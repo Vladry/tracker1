@@ -17,9 +17,8 @@ public:
         int max_targets = 5;
         int click_padding = 6;
         int remove_padding = 6;
-        int fallback_box_size = 40;
+        int fallback_box_size = 20;
         float max_area_ratio = 0.1f;
-        int motion_search_radius = 30;
         int motion_diff_threshold = 25;
         int click_search_radius = 80;
         int click_capture_size = 80;
@@ -30,13 +29,6 @@ public:
         float motion_min_magnitude = 0.4f;
         float motion_angle_tolerance_deg = 20.0f;
         float motion_mag_tolerance_px = 3.0f;
-        float tracker_motion_min_ratio = 0.02f;
-        int tracker_motion_grace_frames = 3;
-        int lost_bbox_ttl_ms = 3000;
-        int reacquire_fallback_max_distance_px = 300;
-        int reacquire_kalman_radius_px = 120;
-        int reacquire_near_radius_px = 200;
-        bool use_kalman = false;
         bool click_equalize = true;
         bool floodfill_fill_overlay = true;
         int floodfill_lo_diff = 20;

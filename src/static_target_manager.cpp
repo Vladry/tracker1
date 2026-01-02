@@ -32,6 +32,7 @@ bool StaticTargetManager::load_config(const toml::table& tbl) {
         cfg_.click_search_radius = read_required<int>(*cfg, "click_search_radius");
         cfg_.click_equalize = read_required<bool>(*cfg, "click_equalize");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
+        cfg_.remove_padding = read_required<int>(*cfg, "remove_padding");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
         cfg_.overlay_ttl_seconds = read_required<int>(*cfg, "overlay_ttl_seconds");
         cfg_.min_area = read_required<int>(*cfg, "min_area");

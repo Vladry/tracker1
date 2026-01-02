@@ -19,7 +19,7 @@ public:
         int max_targets = 5;
         int click_padding = 6;
         int remove_padding = 6;
-        int fallback_box_size = 40;
+        int fallback_box_size = 20;
         float max_area_ratio = 0.1f;
         int click_search_radius = 40;
         bool click_equalize = true;

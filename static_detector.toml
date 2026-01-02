@@ -9,7 +9,7 @@ click_padding = 6
 remove_padding = 6
 
 # Размер квадратного бокса, если flood fill не нашёл явный объект.
-fallback_box_size = 40
+fallback_box_size = 20
 
 # Максимально допустимая доля площади кадра для ROI (0..1).
 max_area_ratio = 0.1
