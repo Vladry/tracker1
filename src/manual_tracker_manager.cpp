@@ -28,6 +28,17 @@ namespace {
         return frame.clone();
     }
 
+    static inline cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) {
+        float x1 = std::max(0.0f, rect.x);
+        float y1 = std::max(0.0f, rect.y);
+        float x2 = std::min(rect.x + rect.width, static_cast<float>(size.width));
+        float y2 = std::min(rect.y + rect.height, static_cast<float>(size.height));
+        if (x2 <= x1 || y2 <= y1) {
+            return {};
+        }
+        return {x1, y1, x2 - x1, y2 - y1};
+    }
+
     constexpr size_t kVisibilityHistorySize = 3;
 }
 
@@ -113,19 +124,6 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         std::cerr << "[MANUAL] config load failed: " << e.what() << std::endl;
         return false;
     }
-}
-
-// Обрезает прямоугольник по границам кадра.
-// Используется при нормализации ROI и результатов трекера.
-cv::Rect2f ManualTrackerManager::clip_rect(const cv::Rect2f& rect, const cv::Size& size) const {
-    float x1 = std::max(0.0f, rect.x);
-    float y1 = std::max(0.0f, rect.y);
-    float x2 = std::min(rect.x + rect.width, static_cast<float>(size.width));
-    float y2 = std::min(rect.y + rect.height, static_cast<float>(size.height));
-    if (x2 <= x1 || y2 <= y1) {
-        return {};
-    }
-    return {x1, y1, x2 - x1, y2 - y1};
 }
 
 // Проверяет попадание клика в bbox с расширением по краям.

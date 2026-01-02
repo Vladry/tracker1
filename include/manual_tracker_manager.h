@@ -111,8 +111,8 @@ private:
     ManualMotionDetector motion_detector_;
 
     bool load_config(const toml::table& tbl);
+    cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) const;
     cv::Ptr<cv::Tracker> create_tracker() const;
-
     bool point_in_rect_with_padding(const cv::Rect2f& rect, int x, int y, int pad) const;
     void record_visibility(ManualTrack& track, bool visible);
     bool has_recent_visibility_loss(const ManualTrack& track) const;
