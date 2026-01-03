@@ -131,6 +131,15 @@ bool ManualTrackerManager::has_recent_visibility_loss(const ManualTrack& track) 
                        [](bool visible) { return !visible; });
 }
 
+
+// Если синхронное движение не обнаружено — трек принудительно переводится в режим потери (серый bbox) и запускается поиск кандидата.
+// Запускается по watchdog в update, чтобы убивать "залипшие" статические треки отвязавшиеся от целей.
+// метод реализует детекцию синхронного движения:  cv::calcOpticalFlowFarneback(prev_roi, curr_roi, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+// Работает совместно с ManualTrackerManager::mark_track_lost
+//Логика:
+//Оптический поток рассчитывается в ROI. Усредняется направление движения.
+//Считается доля пикселей, чьи векторы движения совпадают по направлению с усреднённым.
+//Если доля меньше заданного порога — считается, что движения нет.
 bool ManualTrackerManager::has_group_motion(const cv::Mat& prev_gray,
                                             const cv::Mat& curr_gray,
                                             const cv::Rect2f& roi) const {
@@ -199,6 +208,8 @@ bool ManualTrackerManager::has_group_motion(const cv::Mat& prev_gray,
     return static_cast<float>(aligned_pixels) >= static_cast<float>(total_pixels) * cfg_.watchdog_motion_ratio;
 }
 
+
+// Метод перевода трека в состояние потери цели. Работает совместно с has_group_motion
 void ManualTrackerManager::mark_track_lost(ManualTrack& track, long long now_ms) {
     track.lost_since_ms = now_ms;
     track.visibility_history.fill(false);
