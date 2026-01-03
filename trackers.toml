@@ -29,6 +29,8 @@ motion_min_magnitude = 0.2
 # Допуск по модулю смещения (пиксели).
 motion_mag_tolerance_px = 3.0
 
+# ВЕРНУТЬ НАЗНАЧЕНИЕ:    motion_angle_tolerance_deg    Использовано в:  const float kAngleTolDeg = std::max(1.0f, cfg_.motion_angle_tolerance_deg);
+
 # Время ожидания перед автоперепривязкой (мс).
 tracker_rebind_ms = 500
 

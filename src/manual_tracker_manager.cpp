@@ -148,6 +148,7 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
     (void)now_ms;
 
     // Сначала проверяем, не кликнули ли по существующему боксу — тогда удаляем цель.
+    // Цикл: ищет первый трек, чей bbox покрывает клик (с паддингом), и удаляет его.
     for (auto it = tracks_.begin(); it != tracks_.end(); ++it) {
         if (point_in_rect_with_padding(it->bbox, x, y, cfg_.click_padding)) {
             tracks_.erase(it);
@@ -194,12 +195,15 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 
     std::vector<cv::Rect2f> tracked_boxes;
     tracked_boxes.reserve(tracks_.size());
+    // Цикл: собирает bbox всех активных треков для фильтрации кандидатов автопоиска.
     for (const auto& track : tracks_) {
         tracked_boxes.push_back(track.bbox);
     }
 
     if (!pending_clicks_.empty() && !frame.empty()) {
         cv::Mat gray = current_gray;
+        // Цикл: дополняет историю кадров для pending-кликов и, при готовности,
+        //       пытается создать трек на основе движения в ROI.
         for (auto it = pending_clicks_.begin(); it != pending_clicks_.end(); ) {
             it->gray_frames.push_back(gray);
             const int required = motion_detector_.required_frames();
@@ -252,6 +256,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                         cv::convexHull(motion_points, hull, true);
                         std::vector<cv::Point> hull_int;
                         hull_int.reserve(hull.size());
+                        // Цикл: переводит точки hull в целочисленные координаты маски заливки.
                         for (const auto& pt : hull) {
                             hull_int.emplace_back(static_cast<int>(std::round(pt.x)),
                                                   static_cast<int>(std::round(pt.y)));
@@ -283,6 +288,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         }
     }
 
+    // Цикл: обновляет все активные треки (OpenCV-трекер, потери, автопоиск кандидатов).
     for (auto it = tracks_.begin(); it != tracks_.end(); ) {
         it->candidate_search.set_tracked_boxes(tracked_boxes);
         bool visible = false;
@@ -372,6 +378,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 void ManualTrackerManager::refresh_targets() {
     targets_.clear();
     targets_.reserve(tracks_.size());
+    // Цикл: преобразует внутренние треки в Target для отрисовки/экспорта.
     for (const auto& tr : tracks_) {
         Target tg;
         tg.id = tr.id;
