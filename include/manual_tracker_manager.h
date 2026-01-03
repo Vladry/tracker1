@@ -48,7 +48,6 @@ private:
         int id = -1; // - id: идентификатор цели.
         cv::Rect2f bbox; // - bbox: текущий bbox цели.
         cv::Ptr<cv::Tracker> tracker; // - tracker: экземпляр OpenCV-трекера.
-        int age_frames = 0; // - age_frames: количество кадров жизни цели.
         long long lost_since_ms = 0; // - lost_since_ms: время начала потери цели (0 — цель видна).
         std::array<bool, 3> visibility_history{true, true, true}; // - visibility_history: история видимости для фильтра потери.
         size_t visibility_index = 0; // - visibility_index: индекс кольцевого буфера истории видимости.

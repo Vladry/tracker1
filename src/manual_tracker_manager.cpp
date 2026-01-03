@@ -117,9 +117,7 @@ void ManualTrackerManager::record_visibility(ManualTrack& track, bool visible) {
 }
 
 // Проверяет, что трек не был виден в последних трех кадрах.
-// all_of -возвращает true, если лямбда вернула true для всех элементов. Наша логика: если хоть один их 3х элемент был видимый,
-// возвращаем false - т.е. цель считается "не имеющей потерь видимости". Если вернули true, значит все три цели в history являются
-// "не видимыми", т.е. глобально, цель считается потерянной для отрисовки зелёным.
+// Возвращает true, когда цель считается потерянной для отрисовки.
 bool ManualTrackerManager::has_recent_visibility_loss(const ManualTrack& track) const {
     return std::all_of(track.visibility_history.begin(),
                        track.visibility_history.end(),
@@ -140,7 +138,7 @@ cv::Ptr<cv::Tracker> ManualTrackerManager::create_tracker() const {
 }
 
 // Обработчик ЛКМ: удаляет цель по клику по bbox или инициирует новую.
-// Клик по пустому месту создаёт PendingClick для анализа движения.
+// Клик по пустому месту содаёт PendingClick для анализа движения.
 bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
     (void)now_ms;
@@ -268,8 +266,6 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
     }
 
     for (auto it = tracks_.begin(); it != tracks_.end(); ) {
-        it->age_frames += 1;
-
         bool visible = false;
         if (!frame.empty() && it->tracker) {
             cv::Rect new_box;
@@ -343,7 +339,6 @@ void ManualTrackerManager::refresh_targets() {
         tg.id = tr.id;
         tg.target_name = "T" + std::to_string(tr.id);
         tg.bbox = tr.bbox;
-        tg.age_frames = tr.age_frames;
         // Переводим цель в "потерянную" после трёх последовательных промахов трекера.
         tg.missed_frames = has_recent_visibility_loss(tr) ? 1 : 0;
         targets_.push_back(std::move(tg));

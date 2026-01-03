@@ -24,7 +24,6 @@ private:
     struct Track {
         int id = -1; // - id: идентификатор трека.
         cv::Rect2f bbox; // - bbox: текущий bbox трека.
-        int age = 0; // - age: количество кадров жизни.
         int missed = 0; // - missed: количество пропущенных кадров.
         cv::Point2f last_center{0.0f, 0.0f}; // - last_center: последняя позиция центра.
         cv::Point2f velocity{0.0f, 0.0f}; // - velocity: оценка скорости.

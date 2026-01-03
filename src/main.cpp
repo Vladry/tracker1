@@ -167,10 +167,9 @@ int main(int argc, char *argv[]) {
             }
 
             tracker.update(frame, now_steady_ms());
-
             overlay.render(frame, tracker.targets(), -1);
-            overlay.render_static_targets(frame, static_targets.targets());
             static_targets.update(frame, now_steady_ms());
+            overlay.render_static_targets(frame, static_targets.targets());
 
             // Пуликуем кадр с overlay для UI (отдельный store => нет "саморазгона")
             ui_store.setFrame(std::move(frame));

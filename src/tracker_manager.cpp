@@ -36,13 +36,6 @@ bool TrackerManager::load_tracker_config(const toml::table& tbl) {
 };
 
 
-void TrackerManager::reset() {
-    tracks_.clear();
-    targets_.clear();
-    next_id_ = 1;
-    leading_id_ = -1;
-}
-
 float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
     float inter = (a & b).area();
     float uni = a.area() + b.area() - inter;
@@ -56,7 +49,6 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
               << " tracks_before=" << tracks_.size()
               << std::endl;
     for (auto& t : tracks_) {
-        t.age++;
         t.missed++;
         if (t.has_center) {
             t.bbox.x = t.last_center.x - t.bbox.width * 0.5f;
@@ -100,7 +92,6 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
         Track t;
         t.id = next_id_++;
         t.bbox = detections[di];
-        t.age = 0;
         t.missed = 0;
         t.last_center = cv::Point2f(t.bbox.x + t.bbox.width * 0.5f,
                                     t.bbox.y + t.bbox.height * 0.5f);
@@ -190,7 +181,6 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             tg.id = tr.id;
             tg.target_name = "T" + std::to_string(tr.id);
             tg.bbox = tr.bbox;
-            tg.age_frames = tr.age;
             tg.missed_frames = tr.missed;
             targets_.push_back(std::move(tg));
             break;
@@ -202,7 +192,6 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             tg.id = tr.id;
             tg.target_name = "T" + std::to_string(tr.id);
             tg.bbox = tr.bbox;
-            tg.age_frames = tr.age;
             tg.missed_frames = tr.missed;
             targets_.push_back(std::move(tg));
         }
