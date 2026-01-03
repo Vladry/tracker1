@@ -24,6 +24,7 @@ public:
         int tracker_min_size = 24; // - tracker_min_size: минимальный размер bbox перед запуском трекера.
         float motion_min_magnitude = 0.4f; // - motion_min_magnitude: минимальная средняя скорость движения.
         float motion_mag_tolerance_px = 3.0f; // - motion_mag_tolerance_px: допуск по длине шага движения.
+        int tracker_rebind_ms = 500; // - tracker_rebind_ms: задержка перед автопоиском кандидата после потери цели.
         bool floodfill_fill_overlay = true; // - floodfill_fill_overlay: включение оверлея для визуализации зоны движения.
         int floodfill_lo_diff = 20; // - floodfill_lo_diff: нижний порог flood fill (зарезервировано).
         int floodfill_hi_diff = 20; // - floodfill_hi_diff: верхний порог flood fill (зарезервировано).

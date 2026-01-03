@@ -88,6 +88,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.tracker_min_size = read_required<int>(*cfg, "tracker_min_size");
         cfg_.motion_min_magnitude = read_required<float>(*cfg, "motion_min_magnitude");
         cfg_.motion_mag_tolerance_px = read_required<float>(*cfg, "motion_mag_tolerance_px");
+        cfg_.tracker_rebind_ms = read_required<int>(*cfg, "tracker_rebind_ms");
         cfg_.floodfill_fill_overlay = read_required<bool>(*cfg, "floodfill_fill_overlay");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
@@ -274,10 +275,16 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
     for (auto it = tracks_.begin(); it != tracks_.end(); ) {
         it->candidate_search.set_tracked_boxes(tracked_boxes);
         bool visible = false;
-        if (!frame.empty() && it->tracker) {
+        const cv::Rect2f prev_bbox = it->bbox;
+        if (it->lost_since_ms == 0 && !frame.empty() && it->tracker) {
             cv::Rect new_box;
             if (it->tracker->update(frame, new_box)) {
-                it->bbox = ::clip_rect(cv::Rect2f(new_box), frame.size());
+                const cv::Rect2f candidate = ::clip_rect(cv::Rect2f(new_box), frame.size());
+                if (candidate.area() > 1.0f) {
+                    it->bbox = candidate;
+                } else {
+                    it->bbox = prev_bbox;
+                }
                 if (it->bbox.area() > 1.0f) {
                     it->lost_since_ms = 0;
                     visible = true;
@@ -291,27 +298,33 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             record_visibility(*it, visible);
             if (!visible && it->lost_since_ms == 0) {
                 it->lost_since_ms = now_ms;
+                it->visibility_history.fill(false);
+                it->visibility_index = 0;
                 it->candidate_search.reset();
-                it->candidate_search.start(it->last_known_center, now_ms, frame);
             }
         }
 
         if (it->lost_since_ms > 0) {
             if (!frame.empty()) {
-                it->candidate_search.start(it->last_known_center, now_ms, frame);
-                cv::Rect2f candidate_bbox;
-                if (it->candidate_search.update(frame, candidate_bbox)) {
-                    if (log_cfg_.manual_detector_level_logger) {
-                        std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
+                const long long lost_for_ms = now_ms - it->lost_since_ms;
+                if (lost_for_ms >= cfg_.tracker_rebind_ms) {
+                    if (!it->candidate_search.active()) {
+                        it->candidate_search.start(it->last_known_center, now_ms, frame);
                     }
-                    it->bbox = candidate_bbox;
-                    it->tracker = create_tracker();
-                    it->tracker->init(frame, it->bbox);
-                    it->lost_since_ms = 0;
-                    it->visibility_history.fill(true);
-                    it->visibility_index = 0;
-                    it->last_known_center = rect_center(it->bbox);
-                    it->candidate_search.reset();
+                    cv::Rect2f candidate_bbox;
+                    if (it->candidate_search.update(frame, candidate_bbox)) {
+                        if (log_cfg_.manual_detector_level_logger) {
+                            std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
+                        }
+                        it->bbox = candidate_bbox;
+                        it->tracker = create_tracker();
+                        it->tracker->init(frame, it->bbox);
+                        it->lost_since_ms = 0;
+                        it->visibility_history.fill(true);
+                        it->visibility_index = 0;
+                        it->last_known_center = rect_center(it->bbox);
+                        it->candidate_search.reset();
+                    }
                 }
             }
         }
@@ -347,7 +360,7 @@ void ManualTrackerManager::refresh_targets() {
         tg.target_name = "T" + std::to_string(tr.id);
         tg.bbox = tr.bbox;
         // Переводим цель в "потерянную" после трёх последовательных промахов трекера.
-        tg.missed_frames = has_recent_visibility_loss(tr) ? 1 : 0;
+        tg.missed_frames = tr.lost_since_ms > 0 ? 1 : (has_recent_visibility_loss(tr) ? 1 : 0);
         targets_.push_back(std::move(tg));
     }
 }

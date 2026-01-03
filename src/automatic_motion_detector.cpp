@@ -5,7 +5,7 @@
 #include <limits>
 
 namespace {
-    constexpr int kHistorySize = 3;
+    constexpr int kHistorySize = 5;
     constexpr int kDiffThreshold = 25;
     constexpr double kMinArea = 60.0;
 }
