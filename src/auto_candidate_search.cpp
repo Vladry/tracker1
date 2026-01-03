@@ -17,16 +17,22 @@ namespace {
 // Назначает детектор движения, который будет использоваться для поиска кандидатов.
 void AutoCandidateSearch::configure(const ManualMotionDetector* detector) {
     detector_ = detector;
+    automatic_detector_.set_detector(detector);
 }
 
 // Сбрасывает внутреннее состояние поиска кандидатов.
-// Отанавливает активный сбор кадров и очищает буферы.
+// Останавливает активный сбор кадров и очищает буферы.
 void AutoCandidateSearch::reset() {
     started_ = false;
     active_ = false;
     start_ms_ = 0;
     roi_ = {};
     gray_frames_.clear();
+}
+
+void AutoCandidateSearch::set_tracked_boxes(const std::vector<cv::Rect2f>& tracked_boxes) {
+    tracked_boxes_ = tracked_boxes;
+    automatic_detector_.set_tracked_boxes(tracked_boxes_);
 }
 
 // Инициализирует поиск вокруг последней позиции цели и сохраняет базовый кадр.
@@ -44,7 +50,14 @@ void AutoCandidateSearch::start(const cv::Point2f& last_pos, long long now_ms, c
 
     const int cx = static_cast<int>(std::round(last_pos_.x));
     const int cy = static_cast<int>(std::round(last_pos_.y));
-    roi_ = detector_->make_click_roi(frame, cx, cy);
+    cv::Point2f best_point;
+    int roi_x = cx;
+    int roi_y = cy;
+    if (automatic_detector_.find_best_candidate(frame, cx, cy, best_point)) {
+        roi_x = static_cast<int>(std::round(best_point.x));
+        roi_y = static_cast<int>(std::round(best_point.y));
+    }
+    roi_ = detector_->make_click_roi(frame, roi_x, roi_y);
     if (roi_.area() <= 0) {
         return;
     }

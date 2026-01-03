@@ -29,6 +29,7 @@ if (NOT RKNN_INCLUDE_DIR)
 endif ()
 
 set(FIVE_THREADS_SOURCES
+        src/automatic_motion_detector.cpp
         src/display_loop.cpp
         src/auto_candidate_search.cpp
         src/frame_store.cpp
@@ -41,6 +42,8 @@ set(FIVE_THREADS_SOURCES
         src/static_box_manager.cpp
         src/static_target_manager.cpp
         src/tracker_manager.cpp
+        include/automatic_motion_detector.h
+        src/automatic_motion_detector.cpp
 )
 
 add_executable(Five_Threads ${FIVE_THREADS_SOURCES})

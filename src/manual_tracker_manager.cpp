@@ -138,7 +138,7 @@ cv::Ptr<cv::Tracker> ManualTrackerManager::create_tracker() const {
 }
 
 // Обработчик ЛКМ: удаляет цель по клику по bbox или инициирует новую.
-// Клик по пустому месту содаёт PendingClick для анализа движения.
+// Клик по пустому месту создаёт PendingClick для анализа движения.
 bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
     (void)now_ms;
@@ -186,6 +186,12 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
     cv::Mat current_gray;
     if (!frame.empty()) {
         current_gray = to_gray(frame);
+    }
+
+    std::vector<cv::Rect2f> tracked_boxes;
+    tracked_boxes.reserve(tracks_.size());
+    for (const auto& track : tracks_) {
+        tracked_boxes.push_back(track.bbox);
     }
 
     if (!pending_clicks_.empty() && !frame.empty()) {
@@ -266,6 +272,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
     }
 
     for (auto it = tracks_.begin(); it != tracks_.end(); ) {
+        it->candidate_search.set_tracked_boxes(tracked_boxes);
         bool visible = false;
         if (!frame.empty() && it->tracker) {
             cv::Rect new_box;
