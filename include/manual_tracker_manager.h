@@ -25,6 +25,8 @@ public:
         float motion_min_magnitude = 0.4f; // - motion_min_magnitude: минимальная средняя скорость движения.
         float motion_mag_tolerance_px = 3.0f; // - motion_mag_tolerance_px: допуск по длине шага движения.
         int tracker_rebind_ms = 500; // - tracker_rebind_ms: задержка перед автопоиском кандидата после потери цели.
+        int watchdog_period_ms = 500; // - watchdog_period_ms: период проверки группового движения по ROI (мс).
+        float watchdog_motion_ratio = 0.8f; // - watchdog_motion_ratio: доля площади ROI с едино-направленным движением.
         int motion_detection_iterations = 10; // - motion_detection_iterations: число итераций детекции движения.
         float motion_detection_diffusion_px = 100.0f; // - motion_detection_diffusion_px: радиус кластеризации детекций.
         float motion_detection_cluster_ratio = 0.9f; // - motion_detection_cluster_ratio: доля детекций в кластере.
@@ -75,6 +77,8 @@ private:
     cv::Mat flood_fill_overlay_; // - flood_fill_overlay_: визуальный оверлей зоны движения.
     cv::Mat flood_fill_mask_; // - flood_fill_mask_: маска оверлея зоны движения.
     long long overlay_expire_ms_ = 0; // - overlay_expire_ms_: время истечения оверлея.
+    cv::Mat watchdog_prev_gray_; // - watchdog_prev_gray_: кадр для контроля группового движения.
+    long long watchdog_prev_ms_ = 0; // - watchdog_prev_ms_: время предыдущей проверки движения.
     ManualMotionDetector motion_detector_; // - motion_detector_: детектор движения в ROI клика.
 
     // Загружает параметры ручного трекера из TOML.
@@ -87,6 +91,10 @@ private:
     void record_visibility(ManualTrack& track, bool visible);
     // Проверяет, что цель была невидима в последние несколько кадров.
     bool has_recent_visibility_loss(const ManualTrack& track) const;
+    // Проверяет наличие синхронного группового движения в ROI трека.
+    bool has_group_motion(const cv::Mat& prev_gray, const cv::Mat& curr_gray, const cv::Rect2f& roi) const;
+    // Переводит трек в состояние потери (серый bbox + поиск кандидата).
+    void mark_track_lost(ManualTrack& track, long long now_ms);
     // Обновляет публичный список целей на основе внутренних треков.
     void refresh_targets();
 };

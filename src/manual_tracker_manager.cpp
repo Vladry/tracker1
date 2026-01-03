@@ -49,6 +49,7 @@ namespace {
 
     // Размер кольцевого буфера видимости: три кадра для определения потери цели.
     constexpr size_t kVisibilityHistorySize = 3;
+    constexpr float kWatchdogAngleTolDeg = 20.0f;
 }
 
 // Конструктор: поднимает логирование и загружает настройки ручного трекера.
@@ -89,6 +90,8 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.motion_min_magnitude = read_required<float>(*cfg, "motion_min_magnitude");
         cfg_.motion_mag_tolerance_px = read_required<float>(*cfg, "motion_mag_tolerance_px");
         cfg_.tracker_rebind_ms = read_required<int>(*cfg, "tracker_rebind_ms");
+        cfg_.watchdog_period_ms = read_required<int>(*cfg, "watchdog_period_ms");
+        cfg_.watchdog_motion_ratio = read_required<float>(*cfg, "watchdog_motion_ratio");
         cfg_.motion_detection_iterations = read_required<int>(*cfg, "motion_detection_iterations");
         cfg_.motion_detection_diffusion_px = read_required<float>(*cfg, "motion_detection_diffusion_px");
         cfg_.motion_detection_cluster_ratio = read_required<float>(*cfg, "motion_detection_cluster_ratio");
@@ -126,6 +129,86 @@ bool ManualTrackerManager::has_recent_visibility_loss(const ManualTrack& track) 
     return std::all_of(track.visibility_history.begin(),
                        track.visibility_history.end(),
                        [](bool visible) { return !visible; });
+}
+
+bool ManualTrackerManager::has_group_motion(const cv::Mat& prev_gray,
+                                            const cv::Mat& curr_gray,
+                                            const cv::Rect2f& roi) const {
+    if (prev_gray.empty() || curr_gray.empty()) {
+        return false;
+    }
+    cv::Rect clipped = to_int_rect(clip_rect(roi, curr_gray.size()));
+    if (clipped.area() <= 0) {
+        return false;
+    }
+    const cv::Mat prev_roi = prev_gray(clipped);
+    const cv::Mat curr_roi = curr_gray(clipped);
+    cv::Mat flow;
+    cv::calcOpticalFlowFarneback(prev_roi, curr_roi, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+
+    const int total_pixels = clipped.width * clipped.height;
+    if (total_pixels <= 0) {
+        return false;
+    }
+
+    double sum_dx = 0.0;
+    double sum_dy = 0.0;
+    int moving_pixels = 0;
+    for (int y = 0; y < flow.rows; ++y) {
+        const auto* row = flow.ptr<cv::Vec2f>(y);
+        for (int x = 0; x < flow.cols; ++x) {
+            const cv::Vec2f vec = row[x];
+            const float mag = std::hypot(vec[0], vec[1]);
+            if (mag >= cfg_.motion_min_magnitude) {
+                sum_dx += vec[0];
+                sum_dy += vec[1];
+                ++moving_pixels;
+            }
+        }
+    }
+
+    if (moving_pixels == 0) {
+        return false;
+    }
+
+    const double mean_dx = sum_dx / moving_pixels;
+    const double mean_dy = sum_dy / moving_pixels;
+    const double mean_mag = std::hypot(mean_dx, mean_dy);
+    if (mean_mag < cfg_.motion_min_magnitude) {
+        return false;
+    }
+
+    const double cos_tol = std::cos(kWatchdogAngleTolDeg * CV_PI / 180.0);
+    int aligned_pixels = 0;
+    for (int y = 0; y < flow.rows; ++y) {
+        const auto* row = flow.ptr<cv::Vec2f>(y);
+        for (int x = 0; x < flow.cols; ++x) {
+            const cv::Vec2f vec = row[x];
+            const float mag = std::hypot(vec[0], vec[1]);
+            if (mag < cfg_.motion_min_magnitude) {
+                continue;
+            }
+            const double dot = vec[0] * mean_dx + vec[1] * mean_dy;
+            const double cos_angle = dot / (mag * mean_mag);
+            if (cos_angle >= cos_tol) {
+                ++aligned_pixels;
+            }
+        }
+    }
+
+    return static_cast<float>(aligned_pixels) >= static_cast<float>(total_pixels) * cfg_.watchdog_motion_ratio;
+}
+
+void ManualTrackerManager::mark_track_lost(ManualTrack& track, long long now_ms) {
+    track.lost_since_ms = now_ms;
+    track.visibility_history.fill(false);
+    track.visibility_index = 0;
+    track.candidate_search.reset();
+    track.candidate_search.configure_motion_filter(
+            cfg_.motion_detection_iterations,
+            cfg_.motion_detection_diffusion_px,
+            cfg_.motion_detection_cluster_ratio
+    );
 }
 
 // Создаёт экземпляр OpenCV-трекера на основе настроек.
@@ -192,6 +275,9 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
     if (!frame.empty()) {
         current_gray = to_gray(frame);
     }
+    const bool should_run_watchdog = !frame.empty()
+                                     && !watchdog_prev_gray_.empty()
+                                     && (now_ms - watchdog_prev_ms_ >= cfg_.watchdog_period_ms);
 
     std::vector<cv::Rect2f> tracked_boxes;
     tracked_boxes.reserve(tracks_.size());
@@ -315,15 +401,16 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         if (!frame.empty()) {
             record_visibility(*it, visible);
             if (!visible && it->lost_since_ms == 0) {
-                it->lost_since_ms = now_ms;
-                it->visibility_history.fill(false);
-                it->visibility_index = 0;
-                it->candidate_search.reset();
-                it->candidate_search.configure_motion_filter(
-                        cfg_.motion_detection_iterations,
-                        cfg_.motion_detection_diffusion_px,
-                        cfg_.motion_detection_cluster_ratio
-                );
+                mark_track_lost(*it, now_ms);
+            }
+        }
+
+        if (should_run_watchdog && it->lost_since_ms == 0) {
+            if (!has_group_motion(watchdog_prev_gray_, current_gray, it->bbox)) {
+                if (log_cfg_.manual_detector_level_logger) {
+                    std::cout << "[MANUAL] watchdog motion lost id=" << it->id << std::endl;
+                }
+                mark_track_lost(*it, now_ms);
             }
         }
 
@@ -353,6 +440,13 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             }
         }
         ++it;
+    }
+
+    if (!frame.empty()) {
+        if (watchdog_prev_gray_.empty() || should_run_watchdog) {
+            watchdog_prev_gray_ = current_gray.clone();
+            watchdog_prev_ms_ = now_ms;
+        }
     }
 
     refresh_targets();
