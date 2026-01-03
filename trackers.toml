@@ -32,6 +32,15 @@ motion_mag_tolerance_px = 3.0
 # Время ожидания перед автоперепривязкой (мс).
 tracker_rebind_ms = 500
 
+# Количество итераций детекции движения.
+motion_detection_iterations = 10
+
+# Радиус кластеризации детекций (пиксели).
+motion_detection_diffusion_px = 100
+
+# Доля детекций в кластере для принятия (0..1).
+motion_detection_cluster_ratio = 0.9
+
 # Заливать область flood fill красным с прозрачностью 0.7.
 floodfill_fill_overlay = true
 

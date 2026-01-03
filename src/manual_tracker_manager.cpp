@@ -89,6 +89,9 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.motion_min_magnitude = read_required<float>(*cfg, "motion_min_magnitude");
         cfg_.motion_mag_tolerance_px = read_required<float>(*cfg, "motion_mag_tolerance_px");
         cfg_.tracker_rebind_ms = read_required<int>(*cfg, "tracker_rebind_ms");
+        cfg_.motion_detection_iterations = read_required<int>(*cfg, "motion_detection_iterations");
+        cfg_.motion_detection_diffusion_px = read_required<float>(*cfg, "motion_detection_diffusion_px");
+        cfg_.motion_detection_cluster_ratio = read_required<float>(*cfg, "motion_detection_cluster_ratio");
         cfg_.floodfill_fill_overlay = read_required<bool>(*cfg, "floodfill_fill_overlay");
         cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
         cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
@@ -229,6 +232,11 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 track.visibility_index = 0;
                 track.last_known_center = rect_center(track.bbox);
                 track.candidate_search.configure(&motion_detector_);
+                track.candidate_search.configure_motion_filter(
+                        cfg_.motion_detection_iterations,
+                        cfg_.motion_detection_diffusion_px,
+                        cfg_.motion_detection_cluster_ratio
+                );
 
                 tracks_.push_back(std::move(track));
                 refresh_targets();
@@ -301,6 +309,11 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 it->visibility_history.fill(false);
                 it->visibility_index = 0;
                 it->candidate_search.reset();
+                it->candidate_search.configure_motion_filter(
+                        cfg_.motion_detection_iterations,
+                        cfg_.motion_detection_diffusion_px,
+                        cfg_.motion_detection_cluster_ratio
+                );
             }
         }
 

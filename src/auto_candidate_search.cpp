@@ -20,6 +20,12 @@ void AutoCandidateSearch::configure(const ManualMotionDetector* detector) {
     automatic_detector_.set_detector(detector);
 }
 
+void AutoCandidateSearch::configure_motion_filter(int iterations,
+                                                  float diffusion_pixels,
+                                                  float cluster_ratio_threshold) {
+    automatic_detector_.set_detection_params(iterations, diffusion_pixels, cluster_ratio_threshold);
+}
+
 // Сбрасывает внутреннее состояние поиска кандидатов.
 // Останавливает активный сбор кадров и очищает буферы.
 void AutoCandidateSearch::reset() {

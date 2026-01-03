@@ -21,6 +21,14 @@ void AutomaticMotionDetector::set_tracked_boxes(const std::vector<cv::Rect2f>& t
     tracked_boxes_ = tracked_boxes;
 }
 
+void AutomaticMotionDetector::set_detection_params(int iterations,
+                                                   float diffusion_pixels,
+                                                   float cluster_ratio_threshold) {
+    detection_iterations_ = std::max(1, iterations);
+    diffusion_pixels_ = std::max(1.0f, diffusion_pixels);
+    cluster_ratio_threshold_ = std::max(0.0f, std::min(cluster_ratio_threshold, 1.0f));
+}
+
 cv::Mat AutomaticMotionDetector::to_gray(const cv::Mat& frame) {
     if (frame.channels() == 3) {
         cv::Mat gray;
@@ -104,6 +112,46 @@ bool AutomaticMotionDetector::find_nearest(const cv::Point2f& reference,
 
 bool AutomaticMotionDetector::find_best_candidate(const cv::Mat& frame, int cx, int cy, cv::Point2f& out_point) {
     const cv::Point2f reference(static_cast<float>(cx), static_cast<float>(cy));
-    std::vector<cv::Point2f> points = detect_by_motion(frame);
-    return find_nearest(reference, points, out_point);
+    std::vector<cv::Point2f> all_points;
+    all_points.reserve(static_cast<size_t>(detection_iterations_) * 4);
+    for (int i = 0; i < detection_iterations_; ++i) {
+        std::vector<cv::Point2f> points = detect_by_motion(frame);
+        all_points.insert(all_points.end(), points.begin(), points.end());
+    }
+    if (all_points.empty()) {
+        return false;
+    }
+
+    const float radius_sq = diffusion_pixels_ * diffusion_pixels_;
+    std::vector<bool> clustered(all_points.size(), false);
+    std::vector<cv::Point2f> filtered_points;
+    const int total_points = static_cast<int>(all_points.size());
+    for (size_t i = 0; i < all_points.size(); ++i) {
+        if (clustered[i]) {
+            continue;
+        }
+        cv::Point2f sum(0.0f, 0.0f);
+        int count = 0;
+        for (size_t j = i; j < all_points.size(); ++j) {
+            const float dx = all_points[j].x - all_points[i].x;
+            const float dy = all_points[j].y - all_points[i].y;
+            if (dx * dx + dy * dy <= radius_sq) {
+                clustered[j] = true;
+                sum += all_points[j];
+                count += 1;
+            }
+        }
+        if (count > 0) {
+            const float ratio = static_cast<float>(count) / static_cast<float>(total_points);
+            if (ratio >= cluster_ratio_threshold_) {
+                filtered_points.push_back(cv::Point2f(sum.x / count, sum.y / count));
+            }
+        }
+    }
+
+    if (filtered_points.empty()) {
+        return false;
+    }
+
+    return find_nearest(reference, filtered_points, out_point);
 }
