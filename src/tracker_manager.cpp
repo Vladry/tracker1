@@ -21,17 +21,11 @@ bool TrackerManager::load_tracker_config(const toml::table& tbl) {
         cfg_.max_targets = read_required<int>(*tracker, "max_targets");
         cfg_.leading_only = read_required<bool>(*tracker, "leading_only");
         cfg_.leading_min_speed = read_required<float>(*tracker, "leading_min_speed");
-        cfg_.use_kalman = read_required<bool>(*tracker, "use_kalman");
-        cfg_.kalman_process_noise = read_required<float>(*tracker, "kalman_process_noise");
-        cfg_.kalman_measurement_noise = read_required<float>(*tracker, "kalman_measurement_noise");
         std::cout << "[TRK] config: iou_th=" << cfg_.iou_threshold
                   << " max_missed=" << cfg_.max_missed_frames
                   << " max_targets=" << cfg_.max_targets
                   << " leading_only=" << (cfg_.leading_only ? "true" : "false")
                   << " leading_min_speed=" << cfg_.leading_min_speed
-                  << " use_kalman=" << (cfg_.use_kalman ? "true" : "false")
-                  << " kalman_process_noise=" << cfg_.kalman_process_noise
-                  << " kalman_measurement_noise=" << cfg_.kalman_measurement_noise
                   << std::endl;
         return true;
 
@@ -56,47 +50,6 @@ float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
     return inter / uni;
 }
 
-void TrackerManager::init_kalman(Track &track, const cv::Point2f &center) const {
-    track.kf = cv::KalmanFilter(4, 2, 0, CV_32F);
-    track.kf.transitionMatrix = (cv::Mat_<float>(4, 4) <<
-                                                       1, 0, 1, 0,
-            0, 1, 0, 1,
-            0, 0, 1, 0,
-            0, 0, 0, 1);
-    track.kf.measurementMatrix = (cv::Mat_<float>(2, 4) <<
-                                                        1, 0, 0, 0,
-            0, 1, 0, 0);
-    track.kf.processNoiseCov = cv::Mat::eye(4, 4, CV_32F) * cfg_.kalman_process_noise;
-    track.kf.measurementNoiseCov = cv::Mat::eye(2, 2, CV_32F) * cfg_.kalman_measurement_noise;
-    track.kf.errorCovPost = cv::Mat::eye(4, 4, CV_32F);
-    track.kf.statePost = (cv::Mat_<float>(4, 1) << center.x, center.y, 0.0f, 0.0f);
-    track.kf_ready = true;
-}
-
-void TrackerManager::predict_kalman(Track &track) {
-    if (!cfg_.use_kalman || !track.kf_ready) {
-        return;
-    }
-    cv::Mat prediction = track.kf.predict();
-    const float px = prediction.at<float>(0);
-    const float py = prediction.at<float>(1);
-    cv::Point2f center(px, py);
-    if (track.has_center) {
-        track.velocity = center - track.last_center;
-    }
-    track.last_center = center;
-    track.has_center = true;
-}
-
-void TrackerManager::correct_kalman(Track &track, const cv::Point2f &center) {
-    if (!cfg_.use_kalman || !track.kf_ready) {
-        return;
-    }
-    cv::Mat measurement = (cv::Mat_<float>(2, 1) << center.x, center.y);
-    cv::Mat estimate = track.kf.correct(measurement);
-    track.last_center = cv::Point2f(estimate.at<float>(0), estimate.at<float>(1));
-    track.has_center = true;
-}
 
 std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detections) {
     std::cout << "[TRK] update: detections=" << detections.size()
@@ -105,7 +58,6 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
     for (auto& t : tracks_) {
         t.age++;
         t.missed++;
-        predict_kalman(t);
         if (t.has_center) {
             t.bbox.x = t.last_center.x - t.bbox.width * 0.5f;
             t.bbox.y = t.last_center.y - t.bbox.height * 0.5f;
@@ -131,11 +83,6 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             cv::Point2f center(tr.bbox.x + tr.bbox.width * 0.5f,
                                tr.bbox.y + tr.bbox.height * 0.5f);
             const cv::Point2f prev_center = tr.last_center;
-            if (!tr.kf_ready) {
-                init_kalman(tr, center);
-            } else {
-                correct_kalman(tr, center);
-            }
             if (tr.has_center) {
                 tr.velocity = center - prev_center;
             } else {
@@ -159,7 +106,6 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
                                     t.bbox.y + t.bbox.height * 0.5f);
         t.velocity = cv::Point2f(0.0f, 0.0f);
         t.has_center = true;
-        init_kalman(t, t.last_center);
         tracks_.push_back(std::move(t));
     }
 

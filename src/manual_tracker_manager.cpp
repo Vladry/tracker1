@@ -117,7 +117,9 @@ void ManualTrackerManager::record_visibility(ManualTrack& track, bool visible) {
 }
 
 // Проверяет, что трек не был виден в последних трех кадрах.
-// Возвращает true, когда цель считается потерянной для отрисовки.
+// all_of -возвращает true, если лямбда вернула true для всех элементов. Наша логика: если хоть один их 3х элемент был видимый,
+// возвращаем false - т.е. цель считается "не имеющей потерь видимости". Если вернули true, значит все три цели в history являются
+// "не видимыми", т.е. глобально, цель считается потерянной для отрисовки зелёным.
 bool ManualTrackerManager::has_recent_visibility_loss(const ManualTrack& track) const {
     return std::all_of(track.visibility_history.begin(),
                        track.visibility_history.end(),

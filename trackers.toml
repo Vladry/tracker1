@@ -12,7 +12,7 @@ click_padding = 6
 motion_diff_threshold = 15
 
 # Размер квадратной области вокруг клика для анализа движения (пиксели).
-click_capture_size = 80
+click_capture_size = 40
 
 # Количество последующих кадров для анализа движения пикселей.
 motion_frames = 2

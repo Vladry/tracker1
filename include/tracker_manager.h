@@ -18,12 +18,6 @@ private:
         bool leading_only = false; // - leading_only: оставлять только ведущую цель.
         // Минимальная скорость для учёта направления (пикселей за кадр)
         float leading_min_speed = 2.0f; // - leading_min_speed: порог скорости для расчёта направления.
-        // Использовать Калман для предсказания позиции
-        bool use_kalman = true; // - use_kalman: включение фильтра Калмана.
-        // Шум процесса для Калмана (больше -> быстрее реагирует)
-        float kalman_process_noise = 1e-2f; // - kalman_process_noise: шум процесса Калмана.
-        // Шум измерений для Калмана (больше -> сильнее сглаживание)
-        float kalman_measurement_noise = 1e-1f; // - kalman_measurement_noise: шум измерений Калмана.
     };
 
 
@@ -35,8 +29,6 @@ private:
         cv::Point2f last_center{0.0f, 0.0f}; // - last_center: последняя позиция центра.
         cv::Point2f velocity{0.0f, 0.0f}; // - velocity: оценка скорости.
         bool has_center = false; // - has_center: был ли рассчитан центр.
-        cv::KalmanFilter kf; // - kf: фильтр Калмана для предсказания.
-        bool kf_ready = false; // - kf_ready: инициализирован ли фильтр Калмана.
     };
 
     // Рассчитывает IoU для двух прямоугольников.
@@ -49,12 +41,6 @@ private:
 
     // Загружает конфигурацию трекера из TOML.
     bool load_tracker_config(const toml::table& tbl);
-    // Инициализирует фильтр Калмана для трека.
-    void init_kalman(Track &track, const cv::Point2f &center) const;
-    // Прогнозирует позицию трека фильтром Калмана.
-    void predict_kalman(Track &track);
-    // Корректирует фильтр Калмана измерением центра.
-    void correct_kalman(Track &track, const cv::Point2f &center);
 
 public:
     // Создаёт менеджер трекера и загружает конфигурацию.
