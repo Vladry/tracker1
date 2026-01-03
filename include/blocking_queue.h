@@ -10,6 +10,7 @@ class BlockingQueue {
 public:
     BlockingQueue() = default;
 
+    // Помещает элемент в очередь, перемещая значение.
     void push(T&& v) {
         {
             std::lock_guard<std::mutex> lk(m_);
@@ -19,6 +20,7 @@ public:
         cv_.notify_one();
     }
 
+    // Помещает элемент в очередь копированием.
     void push(const T& v) {
         {
             std::lock_guard<std::mutex> lk(m_);
@@ -50,6 +52,7 @@ public:
         return true;
     }
 
+    // Переводит очередь в состояние остановки и будит ожидающие потоки.
     void stop() {
         {
             std::lock_guard<std::mutex> lk(m_);
@@ -58,19 +61,21 @@ public:
         cv_.notify_all();
     }
 
+    // Сообщает, остановлена ли очередь.
     bool stopped() const {
         std::lock_guard<std::mutex> lk(m_);
         return stop_;
     }
 
+    // Возвращает текущее количество элементов в очереди.
     size_t size() const {
         std::lock_guard<std::mutex> lk(m_);
         return q_.size();
     }
 
 private:
-    mutable std::mutex m_;
-    std::condition_variable cv_;
-    std::deque<T> q_;
-    bool stop_ = false;
+    mutable std::mutex m_; // - m_: мьютекс для защиты очереди.
+    std::condition_variable cv_; // - cv_: условная переменная для ожидания данных.
+    std::deque<T> q_; // - q_: контейнер для хранения элементов.
+    bool stop_ = false; // - stop_: флаг остановки очереди.
 };

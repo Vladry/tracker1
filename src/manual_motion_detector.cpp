@@ -46,22 +46,6 @@ namespace {
     }
 }
 
-// Поля ManualMotionDetectorConfig:
-// - click_capture_size: сторона ROI вокруг клика для поиска движения.
-// - motion_frames: количество кадров для анализа движения.
-// - motion_diff_threshold: порог бинаризации diff-кадра.
-// - click_padding: дополнительный паддинг вокруг найденной области движения.
-// - tracker_init_padding: расширение bbox при старте OpenCV-трекера.
-// - tracker_min_size: минимальная сторона bbox для инициализации трекера.
-// - motion_min_magnitude: минимальная средняя длина вектора движения.
-// - motion_angle_tolerance_deg: допуск по углу движения (в градусах).
-// - motion_mag_tolerance_px: допуск по длине шага (в пикселях).
-// - min_area: минимальная площадь ROI для создания кандидата.
-// - min_width: минимальная ширина ROI.
-// - min_height: минимальная высота ROI.
-// Поле ManualMotionDetector:
-// - cfg_: активная конфигурация поиска движения и пороги фильтрации.
-
 // Возвращает число кадров, необходимых для анализа движения (motion_frames + базовый кадр).
 int ManualMotionDetector::required_frames() const {
     return std::max(1, cfg_.motion_frames) + 1;

@@ -37,7 +37,9 @@ public:
     };
 
 public:
+    // Инициализирует RTSP-воркер и считывает конфигурацию.
     RtspWorker(FrameStore& store, toml::table& tbl);
+    // Останавливает поток и освобождает ресурсы.
     ~RtspWorker();
 
     // Запуск RTSP-потока (если уже запущен — ничего не делает).
@@ -81,7 +83,7 @@ private:
         // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
         int restart_delay_ms = 300;
 
-        bool logger_on = false;
+        bool logger_on = false; // - logger_on: включение подробного логирования RTSP.
 
     };
 
@@ -101,31 +103,32 @@ private:
     // Callback appsink: пришёл новый sample.
     static GstFlowReturn onNewSample(GstAppSink* sink, gpointer user_data);
 
-    // Callback rtspsrc: добавился pad (подцепляем к depay).
+    // Callback rtspsrc: добаился pad (подцепляем к depay).
     static void onPadAdded(GstElement* src, GstPad* new_pad, gpointer user_data);
 
 private:
-    FrameStore& store_;
-    RtspConfig cfg_;
+    FrameStore& store_; // - store_: приёмник кадров для передачи в UI/трекер.
+    RtspConfig cfg_; // - cfg_: параметры RTSP-пайплайна.
 
-    std::atomic<State> state_{State::STOPPED};
-    std::atomic<bool> running_{false};         // "рабочий поток должен работать"
-    std::atomic<bool> stopRequested_{false};   // "нужно остановиться"
-    std::atomic<bool> gotFirstSample_{false};
+    std::atomic<State> state_{State::STOPPED}; // - state_: текущее состояние жизненного цикла.
+    std::atomic<bool> running_{false}; // - running_: флаг работы потока.
+    std::atomic<bool> stopRequested_{false}; // - stopRequested_: запрос на остановку.
+    std::atomic<bool> gotFirstSample_{false}; // - gotFirstSample_: признак первого кадра.
 
-    std::thread th_;
+    std::thread th_; // - th_: поток с RTSP-циклом.
 
     // GStreamer объекты (используются только в worker thread, кроме pokeBus()).
-    GstElement* pipeline_{nullptr};
-    GstElement* src_{nullptr};
-    GstElement* depay_{nullptr};
-    GstElement* parse_{nullptr};
-    GstElement* dec_{nullptr};
-    GstElement* force_caps_{nullptr};
-    GstElement* sink_{nullptr};
-    GstBus* bus_{nullptr};
+    GstElement* pipeline_{nullptr}; // - pipeline_: корневой пайплайн GStreamer.
+    GstElement* src_{nullptr}; // - src_: элемент rtspsrc.
+    GstElement* depay_{nullptr}; // - depay_: depayloader RTP.
+    GstElement* parse_{nullptr}; // - parse_: парсер H.265.
+    GstElement* dec_{nullptr}; // - dec_: декодер видео.
+    GstElement* force_caps_{nullptr}; // - force_caps_: capsfilter после декодера.
+    GstElement* sink_{nullptr}; // - sink_: appsink для получения кадров.
+    GstBus* bus_{nullptr}; // - bus_: шина сообщений GStreamer.
 
     // Мьютекс только для безопасного доступа к bus_ в pokeBus().
-    mutable std::mutex bus_mu_;
+    mutable std::mutex bus_mu_; // - bus_mu_: защита доступа к bus_ в pokeBus().
+    // Загружает конфигурацию RTSP из TOML.
     bool load_rtsp_config(toml::table& tbl);
 };

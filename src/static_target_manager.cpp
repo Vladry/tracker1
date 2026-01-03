@@ -4,6 +4,7 @@
 #include <iostream>
 
 namespace {
+    // Округляет прямоугольник с float-координатами до int.
     static inline cv::Rect to_int_rect(const cv::Rect2f& rect) {
         return cv::Rect(
                 static_cast<int>(std::round(rect.x)),

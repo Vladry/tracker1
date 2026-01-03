@@ -109,6 +109,7 @@ static void draw_dashed_rect(
         const cv::Scalar& color,
         int thickness
 ) {
+    // Рисует пунктирную рамку по периметру прямоугольника.
     const int dash_len = 6;
     const int gap_len = 4;
     const cv::Point p1(rect.x, rect.y);

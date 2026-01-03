@@ -51,50 +51,6 @@ namespace {
     constexpr size_t kVisibilityHistorySize = 3;
 }
 
-// Поля ManualTrackerManager::Config:
-// - max_targets: максимум активных целей.
-// - click_padding: пиксели вокруг bbox, в которых клик удаляет цель.
-// - motion_diff_threshold: порог бинаризации diff-кадра для движения.
-// - click_capture_size: размер ROI для анализа движения вокруг клика.
-// - motion_frames: число кадров для анализа движения.
-// - overlay_ttl_seconds: время жизни красного оверлея после создания цели.
-// - tracker_init_padding: расширение bbox перед запуском трекера.
-// - tracker_min_size: минимальный размер bbox перед запуском трекера.
-// - motion_min_magnitude: минимальная средняя скорость движения.
-// - motion_mag_tolerance_px: допуск по длине шага движения.
-// - floodfill_fill_overlay: включение оверлея для визуализации зоны движения.
-// - floodfill_lo_diff: нижний порог flood fill (зарезервировано).
-// - floodfill_hi_diff: верхний порог flood fill (зарезервировано).
-// - min_area: минимальная площадь ROI для создания трека.
-// - min_width: минимальная ширина ROI.
-// - min_height: минимальная высота ROI.
-// - tracker_type: имя OpenCV-трекера (KCF/CSRT).
-// Поля ManualTrackerManager::ManualTrack:
-// - id: идентификатор цели.
-// - bbox: текущий bbox цели.
-// - tracker: экземпляр OpenCV-трекера.
-// - age_frames: количество кадров жизни цели.
-// - lost_since_ms: время начала потери цели (0 — цель видна).
-// - visibility_history: история видимости для фильтра потери.
-// - visibility_index: индекс кольцевого буфера истории видимости.
-// - last_known_center: последняя известная позиция центра цели.
-// - candidate_search: авто-поиск кандидата при потере цели.
-// Поля ManualTrackerManager::PendingClick:
-// - roi: ROI вокруг клика для проверки движения.
-// - gray_frames: последовательность кадров для анализа движения.
-// Поля ManualTrackerManager:
-// - cfg_: текущие настройки ручного трекера.
-// - log_cfg_: настройки логирования.
-// - tracks_: список активных треков.
-// - targets_: список целей для выдачи наружу.
-// - pending_clicks_: клики, ожидающие подтверждения движения.
-// - next_id_: счётчик id целей.
-// - mutex_: защита данных от конкурентного доступа.
-// - flood_fill_overlay_: визуальный оверлей зоны движения.
-// - flood_fill_mask_: маска оверлея зоны движения.
-// - overlay_expire_ms_: время истечения оверлея.
-// - motion_detector_: детектор движения в ROI клика.
-
 // Конструктор: поднимает логирование и загружает настройки ручного трекера.
 ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {
     load_logging_config(tbl, log_cfg_);

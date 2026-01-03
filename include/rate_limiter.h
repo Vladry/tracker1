@@ -11,17 +11,19 @@ public:
                                      : std::chrono::microseconds(0)),
               next_(std::chrono::steady_clock::now()) {}
 
+    // Дожидается следующего "слота" времени для ограничения FPS.
     void tick() {
         if (period_.count() <= 0) return;
         next_ += period_;
         std::this_thread::sleep_until(next_);
     }
 
+    // Сбрасывает внутренний таймер в текущий момент.
     void reset() {
         next_ = std::chrono::steady_clock::now();
     }
 
 private:
-    std::chrono::microseconds period_;
-    std::chrono::steady_clock::time_point next_;
+    std::chrono::microseconds period_; // - period_: длительность одного шага.
+    std::chrono::steady_clock::time_point next_; // - next_: время следующего шага.
 };

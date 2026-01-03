@@ -26,6 +26,7 @@ static inline long long now_steady_ms() {
             std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+// Загружает и объединяет конфигурационные таблицы из TOML-файлов.
 static toml::table load_config_tables() {
     toml::table combined;
     auto merge_table = [&](const toml::table& src, std::string_view key) {
@@ -74,6 +75,7 @@ static LoggingConfig g_logging;
 
 // ===================== MOUSE CALLBACK =====================
 
+// Обрабатывает клики мыши и перенаправляет в ручные менеджеры.
 void on_mouse(int event, int x, int y, int, void *) {
     if (!g_manual_tracker && !g_static_manager) {
         return;

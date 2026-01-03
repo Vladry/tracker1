@@ -21,11 +21,12 @@
 class OverlayRenderer {
 public:
     struct Config {
-        float hud_alpha;
-        float unselected_alpha_when_selected; //TODO
-        int dynamic_bbox_window; //TODO
+        float hud_alpha = 0.25f; // - hud_alpha: прозрачность HUD.
+        float unselected_alpha_when_selected = 0.3f; // - unselected_alpha_when_selected: прозрачность невыбранных bbox.
+        int dynamic_bbox_window = 5; // - dynamic_bbox_window: окно сглаживания динамических bbox.
     };
 
+    // Создаёт рендерер и загружает настройки из TOML.
     explicit OverlayRenderer(const toml::table& tbl);
 
     // Draw dynamic tracked targets.
@@ -42,17 +43,21 @@ public:
             const std::vector<static_box>& boxes
     );
 
+    // Рисует цели статического детектора (ПКМ).
     void render_static_targets(
             cv::Mat& frame,
             const std::vector<StaticTarget>& targets
     ) const;
 
 private:
-    Config cfg_;
+    Config cfg_; // - cfg_: настройки визуализации оверлея.
+    // Загружает параметры оверлея из конфигурации.
     bool load_overlay_config(const toml::table& tbl);
 
+    // Ограничивает прямоугольник границами кадра.
     static cv::Rect clip_rect(const cv::Rect& r, int w, int h);
 
+    // Рисует прямоугольник с альфа-прозрачностью.
     static void draw_rect_alpha(
             cv::Mat& frame,
             const cv::Rect& r,
@@ -60,6 +65,7 @@ private:
             float alpha
     );
 
+    // Рисует текстовую метку поверх кадра.
     static void draw_label(
             cv::Mat& frame,
             const cv::Point& org,

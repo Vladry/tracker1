@@ -7,6 +7,7 @@
 #include <toml++/toml.h>   // ОБЯЗАТЕЛЬНО, forward-decl НЕЛЬЗЯ
 
 
+// Читает обязательный ключ из TOML-таблицы и валидирует тип значения.
 template <typename T>
 static T read_required(const toml::table &tbl, std::string_view key) {
     const auto *node = tbl.get(key);
@@ -23,25 +24,23 @@ static T read_required(const toml::table &tbl, std::string_view key) {
 
 
 struct OverlayConfig {
-    // Прозрачность HUD
-    float hud_alpha = 0.25f;
+    float hud_alpha = 0.25f; // - hud_alpha: прозрачность HUD.
 
-    // Прозрачность невыбранных bbox
-    float unselected_alpha_when_selected = 0.3f;
+    float unselected_alpha_when_selected = 0.3f; // - unselected_alpha_when_selected: прозрачность невыбранных bbox.
     // -------------------------- [smoothing] ---------------------------
-    // Окно сглаживания bbox
-    int dynamic_bbox_window = 5;
+    int dynamic_bbox_window = 5; // - dynamic_bbox_window: окно сглаживания bbox.
 };
 
 struct LoggingConfig {
-    bool rtsp_level_logger_on = false;
-    bool manual_detector_level_logger = true;
-    bool tracker_level_logger = true;
-    bool reacquire_level_logger = true;
-    bool mouse_click_logger = true;
-    bool target_object_created_logger = true;
+    bool rtsp_level_logger_on = false; // - rtsp_level_logger_on: логировать события RTSP уровня.
+    bool manual_detector_level_logger = true; // - manual_detector_level_logger: логировать ручной детектор.
+    bool tracker_level_logger = true; // - tracker_level_logger: логировать трекер.
+    bool reacquire_level_logger = true; // - reacquire_level_logger: логировать перепривязку.
+    bool mouse_click_logger = true; // - mouse_click_logger: логировать клики мыши.
+    bool target_object_created_logger = true; // - target_object_created_logger: логировать создание целей.
 };
 
+// Загружает конфигурацию логирования из секции [logging].
 static inline void load_logging_config(const toml::table& tbl, LoggingConfig& cfg) {
     const auto *logging = tbl["logging"].as_table();
     if (!logging) {

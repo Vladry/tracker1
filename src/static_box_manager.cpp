@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 
+// Вычисляет расстояние между центрами двух прямоугольников.
 static float center_dist(const cv::Rect2f &a, const cv::Rect2f &b) {
     cv::Point2f ca(a.x + a.width * 0.5f, a.y + a.height * 0.5f);
     cv::Point2f cb(b.x + b.width * 0.5f, b.y + b.height * 0.5f);
