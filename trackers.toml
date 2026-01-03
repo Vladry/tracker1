@@ -12,7 +12,7 @@ click_padding = 6
 motion_diff_threshold = 15
 
 # Размер квадратной области вокруг клика для анализа движения (пиксели).
-click_capture_size = 80
+click_capture_size = 20
 
 # Количество последующих кадров для анализа движения пикселей.
 motion_frames = 2
@@ -48,13 +48,13 @@ floodfill_fill_overlay = true
 overlay_ttl_seconds = 1
 
 # Допуски flood fill по яркости.
-floodfill_lo_diff = 20
+floodfill_lo_diff = 10
 floodfill_hi_diff = 20
 
 # Минимальный размер ROI для принятия.
 min_area = 20
-min_width = 6
-min_height = 6
+min_width = 16
+min_height = 16
 
 # Тип трекера для ручного режима: KCF, CSRT.
 tracker_type = "KCF"

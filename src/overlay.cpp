@@ -122,6 +122,21 @@ static void draw_dashed_rect(
     draw_dashed_line(frame, p4, p1, color, thickness, dash_len, gap_len);
 }
 
+static void draw_cross(
+        cv::Mat& frame,
+        const cv::Point& center,
+        int half_size,
+        const cv::Scalar& color,
+        int thickness
+) {
+    cv::Point left(center.x - half_size, center.y);
+    cv::Point right(center.x + half_size, center.y);
+    cv::Point top(center.x, center.y - half_size);
+    cv::Point bottom(center.x, center.y + half_size);
+    cv::line(frame, left, right, color, thickness, cv::LINE_AA);
+    cv::line(frame, top, bottom, color, thickness, cv::LINE_AA);
+}
+
 //------------------------------------------------------------------------------
 // Конструктор
 //------------------------------------------------------------------------------
@@ -211,6 +226,7 @@ void OverlayRenderer::render(
         const std::vector<Target>& targets,
         int /*selected_id*/
 ) const {
+        constexpr int kTargetingCross = 7;
     // Полупрозрачная полоска HUD (верх кадра), если задана.
     if (cfg_.hud_alpha > 0.0f) {
         cv::Rect hud(0, 0, frame.cols, 24);
@@ -236,6 +252,12 @@ void OverlayRenderer::render(
             cv::rectangle(frame, r, cv::Scalar(128, 128, 128), 1);
         } else {
             cv::rectangle(frame, r, cv::Scalar(0, 255, 0), 1);
+        }
+
+        if (t.has_cross) {
+            cv::Point center(static_cast<int>(std::round(t.cross_center.x)),
+                             static_cast<int>(std::round(t.cross_center.y)));
+            draw_cross(frame, center, kTargetingCross, cv::Scalar(0, 0, 255), 1);
         }
 
 #ifdef SHOW_DYNAMIC_IDS

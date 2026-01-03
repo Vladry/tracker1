@@ -36,12 +36,20 @@ bool TrackerManager::load_tracker_config(const toml::table& tbl) {
 };
 
 
+void TrackerManager::reset() {
+    tracks_.clear();
+    targets_.clear();
+    next_id_ = 1;
+    leading_id_ = -1;
+}
+
 float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
     float inter = (a & b).area();
     float uni = a.area() + b.area() - inter;
     if (uni <= 0.f) return 0.f;
     return inter / uni;
 }
+
 
 
 std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detections) {
@@ -75,6 +83,7 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             cv::Point2f center(tr.bbox.x + tr.bbox.width * 0.5f,
                                tr.bbox.y + tr.bbox.height * 0.5f);
             const cv::Point2f prev_center = tr.last_center;
+
             if (tr.has_center) {
                 tr.velocity = center - prev_center;
             } else {
@@ -181,6 +190,7 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             tg.id = tr.id;
             tg.target_name = "T" + std::to_string(tr.id);
             tg.bbox = tr.bbox;
+            tg.has_cross = false;
             tg.missed_frames = tr.missed;
             targets_.push_back(std::move(tg));
             break;
@@ -192,6 +202,7 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             tg.id = tr.id;
             tg.target_name = "T" + std::to_string(tr.id);
             tg.bbox = tr.bbox;
+            tg.has_cross = false;
             tg.missed_frames = tr.missed;
             targets_.push_back(std::move(tg));
         }

@@ -6,6 +6,7 @@
 
 namespace {
     constexpr int kHistorySize = 5;
+    // kDiffThreshold  используется при бинаризации разницы кадров. Это порог яркости (интенсивности изменения пикселей)
     constexpr int kDiffThreshold = 25;
     constexpr double kMinArea = 60.0;
 }

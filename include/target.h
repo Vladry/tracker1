@@ -26,5 +26,7 @@ struct Target {
     double speedY_mps = 0.0; // - speedY_mps: скорость по Y (м/с).
 
     cv::Rect2f bbox; // - bbox: прямоугольник цели в кадре.
+    bool has_cross = false; // - has_cross: нужно ли рисовать прицел для цели.
+    cv::Point2f cross_center{0.0f, 0.0f}; // - cross_center: центр красного крестика.
     int missed_frames = 0; // - missed_frames: количество пропущенных кадров.
 };

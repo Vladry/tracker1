@@ -230,7 +230,10 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 track.lost_since_ms = 0;
                 track.visibility_history.fill(true);
                 track.visibility_index = 0;
-                track.last_known_center = rect_center(track.bbox);
+                track.cross_center = (motion_roi.area() > 1.0f)
+                                     ? rect_center(motion_roi)
+                                     : rect_center(track.bbox);
+                track.last_known_center = track.cross_center;
                 track.candidate_search.configure(&motion_detector_);
                 track.candidate_search.configure_motion_filter(
                         cfg_.motion_detection_iterations,
@@ -296,7 +299,8 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 if (it->bbox.area() > 1.0f) {
                     it->lost_since_ms = 0;
                     visible = true;
-                    it->last_known_center = rect_center(it->bbox);
+                    it->cross_center = rect_center(it->bbox);
+                    it->last_known_center = it->cross_center;
                     it->candidate_search.reset();
                 }
             }
@@ -330,12 +334,13 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                             std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
                         }
                         it->bbox = candidate_bbox;
+                        it->cross_center = rect_center(it->bbox);
                         it->tracker = create_tracker();
                         it->tracker->init(frame, it->bbox);
                         it->lost_since_ms = 0;
                         it->visibility_history.fill(true);
                         it->visibility_index = 0;
-                        it->last_known_center = rect_center(it->bbox);
+                        it->last_known_center = it->cross_center;
                         it->candidate_search.reset();
                     }
                 }
@@ -372,6 +377,8 @@ void ManualTrackerManager::refresh_targets() {
         tg.id = tr.id;
         tg.target_name = "T" + std::to_string(tr.id);
         tg.bbox = tr.bbox;
+        tg.has_cross = true;
+        tg.cross_center = tr.cross_center;
         // Переводим цель в "потерянную" после трёх последовательных промахов трекера.
         tg.missed_frames = tr.lost_since_ms > 0 ? 1 : (has_recent_visibility_loss(tr) ? 1 : 0);
         targets_.push_back(std::move(tg));

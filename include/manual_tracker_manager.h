@@ -56,6 +56,7 @@ private:
         std::array<bool, 3> visibility_history{true, true, true}; // - visibility_history: история видимости для фильтра потери.
         size_t visibility_index = 0; // - visibility_index: индекс кольцевого буфера истории видимости.
         cv::Point2f last_known_center{0.0f, 0.0f}; // - last_known_center: последняя известная позиция центра цели.
+        cv::Point2f cross_center{0.0f, 0.0f}; // - cross_center: центр красного крестика цели.
         AutoCandidateSearch candidate_search; // - candidate_search: авто-поиск кандидата при потере цели.
     };
 
