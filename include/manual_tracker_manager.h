@@ -24,8 +24,8 @@ public:
         int tracker_min_size = 24; // - tracker_min_size: минимальный размер bbox перед запуском трекера.
         float motion_min_magnitude = 0.4f; // - motion_min_magnitude: минимальная средняя скорость движения.
         float motion_mag_tolerance_px = 3.0f; // - motion_mag_tolerance_px: допуск по длине шага движения.
-        int tracker_rebind_ms = 500; // - tracker_rebind_ms: задержка перед автопоиском кандидата после потери цели.
-        int watchdog_period_ms = 500; // - watchdog_period_ms: период проверки группового движения по ROI (мс).
+        int tracker_rebind_ms = 1; // - tracker_rebind_ms: задержка перед автопоиском кандидата после потери цели.
+        int watchdog_period_ms = 100; // - watchdog_period_ms: период проверки группового движения по ROI (мс).
         float watchdog_motion_ratio = 0.8f; // - watchdog_motion_ratio: доля площади ROI с едино-направленным движением.
         int motion_detection_iterations = 10; // - motion_detection_iterations: число итераций детекции движения.
         float motion_detection_diffusion_px = 100.0f; // - motion_detection_diffusion_px: радиус кластеризации детекций.
@@ -33,7 +33,7 @@ public:
         bool floodfill_fill_overlay = true; // - floodfill_fill_overlay: включение оверлея для визуализации зоны движения.
         int floodfill_lo_diff = 20; // - floodfill_lo_diff: нижний порог flood fill (зарезервировано).
         int floodfill_hi_diff = 20; // - floodfill_hi_diff: верхний порог flood fill (зарезервировано).
-        int min_area = 200; // - min_area: минимальная площадь ROI для создания трека.
+        int min_area = 60; // - min_area: минимальная площадь ROI для создания трека.
         int min_width = 10; // - min_width: минимальная ширина ROI.
         int min_height = 10; // - min_height: минимальная высота ROI.
         std::string tracker_type = "KCF"; // - tracker_type: имя OpenCV-трекера (KCF/CSRT).
