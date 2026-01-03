@@ -250,7 +250,47 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
     }
 
     if (selected.empty()) {
-        return {};                                // Нет выбранных точек — движения нет.
+        // Нет выбранных точек — пытаемся проверить стабильность объекта по разрежённой матрице.
+        constexpr float kGridStepRatio = 0.1f;    // kGridStepRatio: шаг сетки как доля размеров ROI.
+        constexpr float kMinStableRatio = 0.1f;   // kMinStableRatio: доля совпавших пикселей для подтверждения цели.
+        const cv::Mat& prev_frame = frames[frames.size() - 2];
+        const cv::Mat& curr_frame = frames.back();
+        if (prev_frame.size() != curr_frame.size()) {
+            return {};                            // Несовпадение размеров кадров.
+        }
+        const int step_x = std::max(1, static_cast<int>(std::round(roi.width * kGridStepRatio)));
+        const int step_y = std::max(1, static_cast<int>(std::round(roi.height * kGridStepRatio)));
+        const int start_x = roi.x + step_x / 2;
+        const int start_y = roi.y + step_y / 2;
+        int total_samples = 0;
+        int stable_samples = 0;
+        std::vector<cv::Point2f> stable_points;
+        for (int y = start_y; y < roi.y + roi.height; y += step_y) {
+            for (int x = start_x; x < roi.x + roi.width; x += step_x) {
+                if (x < 0 || y < 0 || x >= curr_frame.cols || y >= curr_frame.rows) {
+                    continue;
+                }
+                const int prev_value = prev_frame.at<unsigned char>(y, x);
+                const int curr_value = curr_frame.at<unsigned char>(y, x);
+                const int diff = std::abs(curr_value - prev_value);
+                ++total_samples;
+                if (diff <= cfg_.motion_diff_threshold) {
+                    ++stable_samples;
+                    stable_points.emplace_back(static_cast<float>(x),
+                                               static_cast<float>(y));
+                }
+            }
+        }
+        if (total_samples == 0) {
+            return {};
+        }
+        const float stable_ratio = static_cast<float>(stable_samples) /
+                                   static_cast<float>(total_samples);
+        if (stable_ratio >= kMinStableRatio) {
+            motion_points = std::move(stable_points);
+            return clip_rect(cv::Rect2f(roi), base.size());
+        }
+        return {};                                // Нет подтверждения стабильности.
     }
 
     motion_points = selected;                     // Возвращаем точки движения наружу.
@@ -258,6 +298,8 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
     return clip_rect(cv::Rect2f(rect), base.size());
     // Возвращаем bbox движения, обрезанный по кадру.
 }
+
+
 
 
 
