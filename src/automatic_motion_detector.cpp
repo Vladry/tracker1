@@ -5,11 +5,43 @@
 #include <limits>
 
 namespace {
-    constexpr int kHistorySize = 5;
-    // kDiffThreshold  используется при бинаризации разницы кадров. Это порог яркости (интенсивности изменения пикселей)
-    constexpr int kDiffThreshold = 25;
-    constexpr double kMinArea = 60.0;
+    // Параметры алгоритма обнаружения движения (порядок объявления отражает порядок использования).
+    constexpr int kHistorySize = 5;    // Размер истории серых кадров, по которой считается разница (first vs last).
+    constexpr int kDiffThreshold = 25; // Порог яркости для бинаризации разницы кадров (интенсивность изменений).
+    constexpr double kMinArea = 60.0;  // Минимальная площадь контура движения для принятия точки.
 }
+
+/*
+    Документация по automatic_motion_detector.cpp
+
+    Порядок описания переменных и полей классов (формат "<variable> = value; // описание"):
+    detector_ = nullptr;               // Указатель на ручной детектор; используется как внешний источник/контекст.
+    gray_history_ = {};                // История серых кадров для сравнения движения (first vs last).
+    tracked_boxes_ = {};               // Прямоугольники уже отслеживаемых целей; исключаются из результатов.
+    detection_iterations_ = 10;        // Число повторов detect_by_motion для накопления облака точек.
+    diffusion_pixels_ = 100.0f;        // Радиус кластеризации точек (в пикселях) при усреднении.
+    cluster_ratio_threshold_ = 0.9f;   // Минимальная доля точек кластера от общего числа.
+
+    Порядок (последовательность) вызовов функций при поиске кандидата:
+    1) find_best_candidate(frame, cx, cy, out_point)
+       - Главная точка входа. Создаёт reference из (cx, cy).
+       - Повторяет detect_by_motion(frame) detection_iterations_ раз и собирает all_points.
+       - Кластеризует all_points по радиусу diffusion_pixels_ и фильтрует кластеры по
+         cluster_ratio_threshold_.
+       - Передаёт отфильтрованные точки в find_nearest(...).
+
+    2) detect_by_motion(frame)
+       - to_gray(frame) превращает кадр в серый и добавляет в gray_history_.
+       - Если истории меньше двух кадров, возвращает пусто.
+       - Берёт первый и последний кадр истории, считает absdiff и threshold по kDiffThreshold.
+       - Из бинарного diff извлекает контуры, фильтрует по kMinArea.
+       - Для каждого контура вычисляет boundingRect и его центр через rect_center(rect).
+       - Возвращает список центров движущихся областей.
+
+    3) find_nearest(reference, points, out_point)
+       - Пропускает точки, попадающие в tracked_boxes_.
+       - Выбирает ближайшую к reference точку по евклидову расстоянию.
+*/
 
 AutomaticMotionDetector::AutomaticMotionDetector(const ManualMotionDetector* detector)
         : detector_(detector) {}
