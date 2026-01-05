@@ -34,6 +34,8 @@ void AutoCandidateSearch::reset() {
     start_ms_ = 0;
     roi_ = {};
     gray_frames_.clear();
+    best_candidate_selected_ = false;
+    automatic_detector_.reset_state();
 }
 
 void AutoCandidateSearch::set_tracked_boxes(const std::vector<cv::Rect2f>& tracked_boxes) {
@@ -54,6 +56,7 @@ void AutoCandidateSearch::start(const cv::Point2f& last_pos, long long now_ms, c
         return;
     }
 
+    best_candidate_selected_ = false;
     const int cx = static_cast<int>(std::round(last_pos_.x));
     const int cy = static_cast<int>(std::round(last_pos_.y));
     cv::Point2f best_point;
@@ -62,6 +65,7 @@ void AutoCandidateSearch::start(const cv::Point2f& last_pos, long long now_ms, c
     if (automatic_detector_.find_best_candidate(frame, cx, cy, best_point)) {
         roi_x = static_cast<int>(std::round(best_point.x));
         roi_y = static_cast<int>(std::round(best_point.y));
+        best_candidate_selected_ = true;
     }
     roi_ = detector_->make_click_roi(frame, roi_x, roi_y);
     if (roi_.area() <= 0) {
@@ -78,6 +82,22 @@ void AutoCandidateSearch::start(const cv::Point2f& last_pos, long long now_ms, c
 bool AutoCandidateSearch::update(const cv::Mat& frame, cv::Rect2f& out_bbox) {
     if (!active_ || !detector_ || frame.empty()) {
         return false;
+    }
+
+    if (!best_candidate_selected_) {
+        const int cx = static_cast<int>(std::round(last_pos_.x));
+        const int cy = static_cast<int>(std::round(last_pos_.y));
+        cv::Point2f best_point;
+        if (automatic_detector_.find_best_candidate(frame, cx, cy, best_point)) {
+            const int roi_x = static_cast<int>(std::round(best_point.x));
+            const int roi_y = static_cast<int>(std::round(best_point.y));
+            cv::Rect new_roi = detector_->make_click_roi(frame, roi_x, roi_y);
+            if (new_roi.area() > 0) {
+                roi_ = new_roi;
+                gray_frames_.clear();
+                best_candidate_selected_ = true;
+            }
+        }
     }
 
     gray_frames_.push_back(to_gray(frame));

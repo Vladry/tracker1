@@ -1,6 +1,7 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
+#include <deque>
 #include <vector>
 #include "manual_motion_detector.h"
 
@@ -11,6 +12,7 @@ public:
     void set_detector(const ManualMotionDetector* detector);
     void set_tracked_boxes(const std::vector<cv::Rect2f>& tracked_boxes);
     void set_detection_params(int iterations, float diffusion_pixels, float cluster_ratio_threshold);
+    void reset_state();
 
     bool find_best_candidate(const cv::Mat& frame, int cx, int cy, cv::Point2f& out_point);
     std::vector<cv::Point2f> detect_by_motion(const cv::Mat& frame);
@@ -24,6 +26,7 @@ private:
 
     const ManualMotionDetector* detector_ = nullptr;
     std::vector<cv::Mat> gray_history_;
+    std::deque<std::vector<cv::Point2f>> detection_history_;
     std::vector<cv::Rect2f> tracked_boxes_;
     int detection_iterations_ = 10;
     float diffusion_pixels_ = 100.0f;

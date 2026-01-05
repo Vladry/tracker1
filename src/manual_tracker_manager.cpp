@@ -282,12 +282,13 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
 void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    cv::Mat current_gray;
-    if (!frame.empty()) {
-        current_gray = to_gray(frame);
+    if (frame.empty()) {
+        refresh_targets();
+        return;
     }
-    const bool should_run_watchdog = !frame.empty()
-                                     && !watchdog_prev_gray_.empty()
+
+    cv::Mat current_gray = to_gray(frame);
+    const bool should_run_watchdog = !watchdog_prev_gray_.empty()
                                      && (now_ms - watchdog_prev_ms_ >= cfg_.watchdog_period_ms);
 
     std::vector<cv::Rect2f> tracked_boxes;
@@ -297,7 +298,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         tracked_boxes.push_back(track.bbox);
     }
 
-    if (!pending_clicks_.empty() && !frame.empty()) {
+    if (!pending_clicks_.empty()) {
         cv::Mat gray = current_gray;
         // Цикл: дополняет историю кадров для pending-кликов и, при готовности,
         //       пытается создать трек на основе движения в ROI.
@@ -409,11 +410,9 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             }
         }
 
-        if (!frame.empty()) {
-            record_visibility(*it, visible);
-            if (!visible && it->lost_since_ms == 0) {
-                mark_track_lost(*it, now_ms);
-            }
+        record_visibility(*it, visible);
+        if (!visible && it->lost_since_ms == 0) {
+            mark_track_lost(*it, now_ms);
         }
 
         if (should_run_watchdog && it->lost_since_ms == 0) {
@@ -426,45 +425,35 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         }
 
         if (it->lost_since_ms > 0) {
-            if (!frame.empty()) {
-                const long long lost_for_ms = now_ms - it->lost_since_ms;
-                if (lost_for_ms >= cfg_.tracker_rebind_ms) {
-                    if (!it->candidate_search.active()) {
-                        it->candidate_search.start(it->last_known_center, now_ms, frame);
-                    }
-                    cv::Rect2f candidate_bbox;
-                    if (it->candidate_search.update(frame, candidate_bbox)) {
-                        if (log_cfg_.manual_detector_level_logger) {
-                            std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
-                        }
-                        it->bbox = candidate_bbox;
-                        it->cross_center = rect_center(it->bbox);
-                        it->tracker = create_tracker();
-                        it->tracker->init(frame, it->bbox);
-                        it->lost_since_ms = 0;
-                        it->visibility_history.fill(true);
-                        it->visibility_index = 0;
-                        it->last_known_center = it->cross_center;
-                        it->candidate_search.reset();
-                    }
+            if (!it->candidate_search.active()) {
+                it->candidate_search.start(it->last_known_center, now_ms, frame);
+            }
+            cv::Rect2f candidate_bbox;
+            if (it->candidate_search.update(frame, candidate_bbox)) {
+                if (log_cfg_.manual_detector_level_logger) {
+                    std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
                 }
+                it->bbox = candidate_bbox;
+                it->cross_center = rect_center(it->bbox);
+                it->tracker = create_tracker();
+                it->tracker->init(frame, it->bbox);
+                it->lost_since_ms = 0;
+                it->visibility_history.fill(true);
+                it->visibility_index = 0;
+                it->last_known_center = it->cross_center;
+                it->candidate_search.reset();
             }
         }
         ++it;
     }
 
-    if (!frame.empty()) {
-        if (watchdog_prev_gray_.empty() || should_run_watchdog) {
-            watchdog_prev_gray_ = current_gray.clone();
-            watchdog_prev_ms_ = now_ms;
-        }
+    if (watchdog_prev_gray_.empty() || should_run_watchdog) {
+        watchdog_prev_gray_ = current_gray.clone();
+        watchdog_prev_ms_ = now_ms;
     }
 
     refresh_targets();
 
-    if (frame.empty()) {
-        return;
-    }
     if (overlay_expire_ms_ > 0 && now_ms >= overlay_expire_ms_) {
         flood_fill_overlay_.release();
         flood_fill_mask_.release();

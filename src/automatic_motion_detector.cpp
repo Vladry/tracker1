@@ -60,6 +60,16 @@ void AutomaticMotionDetector::set_detection_params(int iterations,
     detection_iterations_ = std::max(1, iterations);
     diffusion_pixels_ = std::max(1.0f, diffusion_pixels);
     cluster_ratio_threshold_ = std::max(0.0f, std::min(cluster_ratio_threshold, 1.0f));
+    if (detection_history_.size() > static_cast<size_t>(detection_iterations_)) {
+        while (detection_history_.size() > static_cast<size_t>(detection_iterations_)) {
+            detection_history_.pop_front();
+        }
+    }
+}
+
+void AutomaticMotionDetector::reset_state() {
+    gray_history_.clear();
+    detection_history_.clear();
 }
 
 cv::Mat AutomaticMotionDetector::to_gray(const cv::Mat& frame) {
@@ -145,11 +155,15 @@ bool AutomaticMotionDetector::find_nearest(const cv::Point2f& reference,
 
 bool AutomaticMotionDetector::find_best_candidate(const cv::Mat& frame, int cx, int cy, cv::Point2f& out_point) {
     const cv::Point2f reference(static_cast<float>(cx), static_cast<float>(cy));
+    std::vector<cv::Point2f> points = detect_by_motion(frame);
+    detection_history_.push_back(std::move(points));
+    while (detection_history_.size() > static_cast<size_t>(detection_iterations_)) {
+        detection_history_.pop_front();
+    }
+
     std::vector<cv::Point2f> all_points;
-    all_points.reserve(static_cast<size_t>(detection_iterations_) * 4);
-    for (int i = 0; i < detection_iterations_; ++i) {
-        std::vector<cv::Point2f> points = detect_by_motion(frame);
-        all_points.insert(all_points.end(), points.begin(), points.end());
+    for (const auto& sample : detection_history_) {
+        all_points.insert(all_points.end(), sample.begin(), sample.end());
     }
     if (all_points.empty()) {
         return false;

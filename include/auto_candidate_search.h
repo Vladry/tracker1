@@ -33,6 +33,7 @@ private:
     const ManualMotionDetector* detector_ = nullptr; // - detector_: указатель на детектор движения для поиска кандидатов.
     bool started_ = false; // - started_: был ли поиск инициализирован (зафиксирован last_pos_).
     bool active_ = false; // - active_: выполняется ли активный сбор кадров для ROI.
+    bool best_candidate_selected_ = false; // - best_candidate_selected_: выбрана ли ближайшая точка для ROI.
     long long start_ms_ = 0; // - start_ms_: время начала поиска (используется для тайминга снаружи).
     cv::Rect roi_; // - roi_: текущая область, в которой ищется движение.
     std::vector<cv::Mat> gray_frames_; // - gray_frames_: накопленные кадры в оттенках серого для анализа движения.
