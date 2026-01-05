@@ -50,27 +50,27 @@ public:
 
 
 private:
-    // количество одновременных статических боксов
-    static constexpr int static_boxes_max_amount = 1;
-
-    static constexpr size_t kTrajectoryHistorySize = 8;
-    static constexpr float kDirectionSimilarityThreshold = 0.5f;
-
     struct StaticBoxConfig {
 // ============================================================================
 // Static rebind configuration
 // ============================================================================
         // Автоматическая перепривязка static bbox
-        bool auto_rebind = true; // - auto_rebind: включение автоматической перепривязки.
-
-        // IoU-порог родительской привязки
-        float parent_iou_th = 0.15f; // - parent_iou_th: порог IoU для выбора родителя.
-
-        // Порог уверенности перепривязки
-        float reattach_score_th = 0.20f; // - reattach_score_th: порог уверенности перепривязки.
+        bool AUTO_REBIND = true; // - AUTO_REBIND: включение автоматической перепривязки.
 
         // Максимально допустимое количество пропущенных кадров
-        int max_missed_frames = 3; // - max_missed_frames: допустимое количество пропусков кадров.
+        int MAX_MISSED_FRAMES = 3; // - MAX_MISSED_FRAMES: допустимое количество пропусков кадров.
+
+        // Максимальное количество статических боксов
+        int MAX_STATIC_BOXES = 1; // - MAX_STATIC_BOXES: максимум одновременно активных статических боксов.
+
+        // Длина истории траекторий
+        int TRAJECTORY_HISTORY_SIZE = 8; // - TRAJECTORY_HISTORY_SIZE: длина истории траекторий (кадры).
+
+        // Порог похожести направления движения
+        float DIRECTION_SIMILARITY_THRESHOLD = 0.5f; // - DIRECTION_SIMILARITY_THRESHOLD: порог похожести направления.
+
+        // Эпсилон для сравнения расстояний
+        float NEARBY_DISTANCE_EPSILON = 10.0f; // - NEARBY_DISTANCE_EPSILON: допуск по расстоянию (пиксели).
     };
 
     struct TrajectoryHistory {

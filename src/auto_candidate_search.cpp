@@ -22,8 +22,12 @@ void AutoCandidateSearch::configure(const ManualMotionDetector* detector) {
 
 void AutoCandidateSearch::configure_motion_filter(int iterations,
                                                   float diffusion_pixels,
-                                                  float cluster_ratio_threshold) {
+                                                  float cluster_ratio_threshold,
+                                                  int history_size,
+                                                  int diff_threshold,
+                                                  double min_area) {
     automatic_detector_.set_detection_params(iterations, diffusion_pixels, cluster_ratio_threshold);
+    automatic_detector_.set_motion_params(history_size, diff_threshold, min_area);
 }
 
 // Сбрасывает внутреннее состояние поиска кандидатов.

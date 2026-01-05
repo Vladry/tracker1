@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <opencv2/opencv.hpp>
 #include <opencv2/tracking.hpp>
 #include <mutex>
@@ -14,29 +13,41 @@
 class ManualTrackerManager {
 public:
     struct Config {
-        int max_targets = 5; // - max_targets: максимум активных целей.
-        int click_padding = 6; // - click_padding: пиксели вокруг bbox, в которых клик удаляет цель.
-        int motion_diff_threshold = 25; // - motion_diff_threshold: порог бинаризации diff-кадра для движения.
-        int click_capture_size = 80; // - click_capture_size: размер ROI для анализа движения вокруг клика.
-        int motion_frames = 3; // - motion_frames: число кадров для анализа движения.
-        int overlay_ttl_seconds = 3; // - overlay_ttl_seconds: время жизни красного оверлея после создания цели.
-        int tracker_init_padding = 10; // - tracker_init_padding: расширение bbox перед запуском трекера.
-        int tracker_min_size = 24; // - tracker_min_size: минимальный размер bbox перед запуском трекера.
-        float motion_min_magnitude = 0.4f; // - motion_min_magnitude: минимальная средняя скорость движения.
-        float motion_mag_tolerance_px = 3.0f; // - motion_mag_tolerance_px: допуск по длине шага движения.
-        int tracker_rebind_ms = 1; // - tracker_rebind_ms: задержка перед автопоиском кандидата после потери цели.
-        int watchdog_period_ms = 100; // - watchdog_period_ms: период проверки группового движения по ROI (мс).
-        float watchdog_motion_ratio = 0.8f; // - watchdog_motion_ratio: доля площади ROI с едино-направленным движением.
-        int motion_detection_iterations = 10; // - motion_detection_iterations: число итераций детекции движения.
-        float motion_detection_diffusion_px = 100.0f; // - motion_detection_diffusion_px: радиус кластеризации детекций.
-        float motion_detection_cluster_ratio = 0.9f; // - motion_detection_cluster_ratio: доля детекций в кластере.
-        bool floodfill_fill_overlay = true; // - floodfill_fill_overlay: включение оверлея для визуализации зоны движения.
-        int floodfill_lo_diff = 20; // - floodfill_lo_diff: нижний порог flood fill (зарезервировано).
-        int floodfill_hi_diff = 20; // - floodfill_hi_diff: верхний порог flood fill (зарезервировано).
-        int min_area = 60; // - min_area: минимальная площадь ROI для создания трека.
-        int min_width = 10; // - min_width: минимальная ширина ROI.
-        int min_height = 10; // - min_height: минимальная высота ROI.
-        std::string tracker_type = "KCF"; // - tracker_type: имя OpenCV-трекера (KCF/CSRT).
+        int MAX_TARGETS = 5; // - MAX_TARGETS: максимум активных целей.
+        int CLICK_PADDING = 6; // - CLICK_PADDING: пиксели вокруг bbox, в которых клик удаляет цель.
+        int MOTION_DIFF_THRESHOLD = 25; // - MOTION_DIFF_THRESHOLD: порог бинаризации diff-кадра для движения.
+        int CLICK_CAPTURE_SIZE = 80; // - CLICK_CAPTURE_SIZE: размер ROI для анализа движения вокруг клика.
+        int MOTION_FRAMES = 3; // - MOTION_FRAMES: число кадров для анализа движения.
+        float MOTION_ANGLE_TOLERANCE_DEG = 20.0f; // - MOTION_ANGLE_TOLERANCE_DEG: допуск угла движения (градусы).
+        int OVERLAY_TTL_SECONDS = 3; // - OVERLAY_TTL_SECONDS: время жизни красного оверлея после создания цели.
+        int TRACKER_INIT_PADDING = 10; // - TRACKER_INIT_PADDING: расширение bbox перед запуском трекера.
+        int TRACKER_MIN_SIZE = 24; // - TRACKER_MIN_SIZE: минимальный размер bbox перед запуском трекера.
+        float MOTION_MIN_MAGNITUDE = 0.4f; // - MOTION_MIN_MAGNITUDE: минимальная средняя скорость движения.
+        float MOTION_MAG_TOLERANCE_PX = 3.0f; // - MOTION_MAG_TOLERANCE_PX: допуск по длине шага движения.
+        int MOTION_MAX_FEATURES = 200; // - MOTION_MAX_FEATURES: максимум ключевых точек.
+        float MOTION_QUALITY_LEVEL = 0.01f; // - MOTION_QUALITY_LEVEL: порог качества keypoints.
+        float MOTION_MIN_DISTANCE = 3.0f; // - MOTION_MIN_DISTANCE: минимальная дистанция keypoints.
+        float MOTION_ANGLE_BIN_DEG = 10.0f; // - MOTION_ANGLE_BIN_DEG: размер бина направлений.
+        float MOTION_MAG_BIN_PX = 2.0f; // - MOTION_MAG_BIN_PX: размер бина длины шага.
+        float MOTION_GRID_STEP_RATIO = 0.1f; // - MOTION_GRID_STEP_RATIO: шаг сетки (доля ROI).
+        float MOTION_MIN_STABLE_RATIO = 0.1f; // - MOTION_MIN_STABLE_RATIO: доля стабильных пикселей.
+        int WATCHDOG_PERIOD_MS = 100; // - WATCHDOG_PERIOD_MS: период проверки группового движения по ROI (мс).
+        float WATCHDOG_MOTION_RATIO = 0.8f; // - WATCHDOG_MOTION_RATIO: доля площади ROI с едино-направленным движением.
+        float WATCHDOG_ANGLE_TOLERANCE_DEG = 20.0f; // - WATCHDOG_ANGLE_TOLERANCE_DEG: допуск угла движения (градусы).
+        int VISIBILITY_HISTORY_SIZE = 3; // - VISIBILITY_HISTORY_SIZE: размер буфера видимости для фильтра потери.
+        int RESERVED_CANDIDATE_TTL_MS = 1500; // - RESERVED_CANDIDATE_TTL_MS: TTL резерва кандидатов (мс).
+        int MOTION_DETECTION_ITERATIONS = 10; // - MOTION_DETECTION_ITERATIONS: число итераций детекции движения.
+        float MOTION_DETECTION_DIFFUSION_PX = 100.0f; // - MOTION_DETECTION_DIFFUSION_PX: радиус кластеризации детекций.
+        float MOTION_DETECTION_CLUSTER_RATIO = 0.9f; // - MOTION_DETECTION_CLUSTER_RATIO: доля детекций в кластере.
+        int AUTO_HISTORY_SIZE = 5; // - AUTO_HISTORY_SIZE: история кадров для автодетекции движения.
+        int AUTO_DIFF_THRESHOLD = 25; // - AUTO_DIFF_THRESHOLD: порог бинаризации diff для автодетекции.
+        double AUTO_MIN_AREA = 60.0; // - AUTO_MIN_AREA: минимальная площадь контура для автодетекции.
+        bool FLOODFILL_FILL_OVERLAY = true; // - FLOODFILL_FILL_OVERLAY: включение оверлея для визуализации зоны движения.
+        float FLOODFILL_OVERLAY_ALPHA = 0.7f; // - FLOODFILL_OVERLAY_ALPHA: альфа заливки floodfill оверлея.
+        int MIN_AREA = 60; // - MIN_AREA: минимальная площадь ROI для создания трека.
+        int MIN_WIDTH = 10; // - MIN_WIDTH: минимальная ширина ROI.
+        int MIN_HEIGHT = 10; // - MIN_HEIGHT: минимальная высота ROI.
+        std::string TRACKER_TYPE = "KCF"; // - TRACKER_TYPE: имя OpenCV-трекера (KCF/CSRT).
     };
 
     // Создаёт менеджер ручного трекинга и загружает конфигурацию из TOML.
@@ -55,7 +66,7 @@ private:
         cv::Rect2f bbox; // - bbox: текущий bbox цели.
         cv::Ptr<cv::Tracker> tracker; // - tracker: экземпляр OpenCV-трекера.
         long long lost_since_ms = 0; // - lost_since_ms: время начала потери цели (0 — цель видна).
-        std::array<bool, 3> visibility_history{true, true, true}; // - visibility_history: история видимости для фильтра потери.
+        std::vector<bool> visibility_history; // - visibility_history: история видимости для фильтра потери.
         size_t visibility_index = 0; // - visibility_index: индекс кольцевого буфера истории видимости.
         cv::Point2f last_known_center{0.0f, 0.0f}; // - last_known_center: последняя известная позиция центра цели.
         cv::Point2f cross_center{0.0f, 0.0f}; // - cross_center: центр красного крестика цели.

@@ -4,13 +4,6 @@
 #include <cmath>
 #include <limits>
 
-namespace {
-    // Параметры алгоритма обнаружения движения (порядок объявления отражает порядок использования).
-    constexpr int kHistorySize = 5;    // Размер истории серых кадров, по которой считается разница (first vs last).
-    constexpr int kDiffThreshold = 25; // Порог яркости для бинаризации разницы кадров (интенсивность изменений).
-    constexpr double kMinArea = 60.0;  // Минимальная площадь контура движения для принятия точки.
-}
-
 /*
     Документация по automatic_motion_detector.cpp
 
@@ -19,7 +12,7 @@ namespace {
     gray_history_ = {};                // История серых кадров для сравнения движения (first vs last).
     tracked_boxes_ = {};               // Прямоугольники уже отслеживаемых целей; исключаются из результатов.
     detection_iterations_ = 10;        // Число повторов detect_by_motion для накопления облака точек.
-    diffusion_pixels_ = 100.0f;        // Радиус кластеризации точек (в пикселях) при усреднении.
+    diffusion_pixels_ = 100.0f;        // Радиус клстеризации точек (в пикселях) при усреднении.
     cluster_ratio_threshold_ = 0.9f;   // Минимальная доля точек кластера от общего числа.
 
     Порядок (последовательность) вызовов функций при поиске кандидата:
@@ -67,6 +60,17 @@ void AutomaticMotionDetector::set_detection_params(int iterations,
     }
 }
 
+void AutomaticMotionDetector::set_motion_params(int history_size, int diff_threshold, double min_area) {
+    history_size_ = std::max(2, history_size);
+    diff_threshold_ = std::max(0, diff_threshold);
+    min_area_ = std::max(0.0, min_area);
+    if (gray_history_.size() > static_cast<size_t>(history_size_)) {
+        while (gray_history_.size() > static_cast<size_t>(history_size_)) {
+            gray_history_.erase(gray_history_.begin());
+        }
+    }
+}
+
 void AutomaticMotionDetector::reset_state() {
     gray_history_.clear();
     detection_history_.clear();
@@ -92,7 +96,7 @@ std::vector<cv::Point2f> AutomaticMotionDetector::detect_by_motion(const cv::Mat
     }
 
     gray_history_.push_back(to_gray(frame));
-    if (static_cast<int>(gray_history_.size()) > kHistorySize) {
+    if (static_cast<int>(gray_history_.size()) > history_size_) {
         gray_history_.erase(gray_history_.begin());
     }
     if (gray_history_.size() < 2) {
@@ -103,13 +107,13 @@ std::vector<cv::Point2f> AutomaticMotionDetector::detect_by_motion(const cv::Mat
     const cv::Mat& last = gray_history_.back();
     cv::Mat diff;
     cv::absdiff(first, last, diff);
-    cv::threshold(diff, diff, kDiffThreshold, 255, cv::THRESH_BINARY);
+    cv::threshold(diff, diff, diff_threshold_, 255, cv::THRESH_BINARY);
 
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(diff, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
     for (const auto& contour : contours) {
         const double area = cv::contourArea(contour);
-        if (area < kMinArea) {
+        if (area < min_area_) {
             continue;
         }
         cv::Rect rect = cv::boundingRect(contour);

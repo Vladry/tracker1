@@ -18,7 +18,7 @@ extern std::atomic<bool> g_rtsp_restart_requested;
 DisplayLoop::DisplayLoop(FrameStore& frames)
         : frames_(frames),
           cfg_(),
-          limiter_(cfg_.target_fps)
+          limiter_(cfg_.TARGET_FPS)
 {
 }
 
@@ -26,7 +26,7 @@ DisplayLoop::DisplayLoop(FrameStore& frames)
 DisplayLoop::DisplayLoop(FrameStore& frames, const Config& cfg)
         : frames_(frames),
           cfg_(cfg),
-          limiter_(cfg_.target_fps)
+          limiter_(cfg_.TARGET_FPS)
 {
 }
 
@@ -38,11 +38,11 @@ void DisplayLoop::run()
 {
     std::cout << "[DISPLAY] DisplayLoop started" << std::endl;
 
-    cv::namedWindow(cfg_.window_name, cv::WINDOW_NORMAL);
+    cv::namedWindow(cfg_.WINDOW_NAME, cv::WINDOW_NORMAL);
 
     // восстановление выбора цели мышью (красный bbox)
     extern void on_mouse(int event, int x, int y, int flags, void* userdata);
-    cv::setMouseCallback(cfg_.window_name, on_mouse, nullptr);
+    cv::setMouseCallback(cfg_.WINDOW_NAME, on_mouse, nullptr);
 
 
     cv::Mat frame;
@@ -59,10 +59,10 @@ void DisplayLoop::run()
                 window_primed = true;
                 std::cout << "[DISPLAY] first frame received" << std::endl;
             }
-            cv::imshow(cfg_.window_name, frame);
+            cv::imshow(cfg_.WINDOW_NAME, frame);
         } else if (!window_primed) {
             // Прокачиваем окно, чтобы клавиатура заработала
-            cv::imshow(cfg_.window_name, prime);
+            cv::imshow(cfg_.WINDOW_NAME, prime);
             window_primed = true;
             std::cout << "[DISPLAY] window primed (no frames yet)" << std::endl;
         }
@@ -85,6 +85,6 @@ void DisplayLoop::run()
         limiter_.tick();
     }
 
-    cv::destroyWindow(cfg_.window_name);
+    cv::destroyWindow(cfg_.WINDOW_NAME);
     std::cout << "[DISPLAY] DisplayLoop finished" << std::endl;
 }

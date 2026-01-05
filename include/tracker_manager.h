@@ -9,15 +9,15 @@ class TrackerManager {
 private:
     struct TrackerConfig {
         // IoU для сопоставления
-        float iou_threshold = 0.25f; // - iou_threshold: минимальный IoU для ассоциации детекций.
+        float IOU_THRESHOLD = 0.25f; // - IOU_THRESHOLD: минимальный IoU для ассоциации детекций.
         // Максимальное число пропущенных кадров без детекции
-        int max_missed_frames = 30; // - max_missed_frames: допустимое число пропусков кадров.
+        int MAX_MISSED_FRAMES = 30; // - MAX_MISSED_FRAMES: допустимое число пропусков кадров.
         // Максимумальное кол-во отслеживаемых активных целей
-        int max_targets = 10; // - max_targets: максимальное число активных целей.
+        int MAX_TARGETS = 10; // - MAX_TARGETS: максимальное число активных целей.
         // Оставлять только "ведущую" цель по направлению движения
-        bool leading_only = false; // - leading_only: оставлять только ведущую цель.
+        bool LEADING_ONLY = false; // - LEADING_ONLY: оставлять только ведущую цель.
         // Минимальная скорость для учёта направления (пикселей за кадр)
-        float leading_min_speed = 2.0f; // - leading_min_speed: порог скорости для расчёта направления.
+        float LEADING_MIN_SPEED = 2.0f; // - LEADING_MIN_SPEED: порог скорости для расчёта направления.
     };
 
 

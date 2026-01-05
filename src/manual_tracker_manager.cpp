@@ -47,10 +47,6 @@ namespace {
         return {x1, y1, x2 - x1, y2 - y1};
     }
 
-    // Размер кольцевого буфера видимости: три кадра для определения потери цели.
-    constexpr size_t kVisibilityHistorySize = 3;
-    constexpr float kWatchdogAngleTolDeg = 20.0f;
-    constexpr long long kReservedCandidateTtlMs = 1500;
 }
 
 // Конструктор: поднимает логирование и загружает настройки ручного трекера.
@@ -58,17 +54,25 @@ ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {
     load_logging_config(tbl, log_cfg_);
     load_config(tbl);
     ManualMotionDetectorConfig motion_cfg;
-    motion_cfg.click_capture_size = cfg_.click_capture_size;
-    motion_cfg.motion_frames = cfg_.motion_frames;
-    motion_cfg.motion_diff_threshold = cfg_.motion_diff_threshold;
-    motion_cfg.click_padding = cfg_.click_padding;
-    motion_cfg.tracker_init_padding = cfg_.tracker_init_padding;
-    motion_cfg.tracker_min_size = cfg_.tracker_min_size;
-    motion_cfg.motion_min_magnitude = cfg_.motion_min_magnitude;
-    motion_cfg.motion_mag_tolerance_px = cfg_.motion_mag_tolerance_px;
-    motion_cfg.min_area = cfg_.min_area;
-    motion_cfg.min_width = cfg_.min_width;
-    motion_cfg.min_height = cfg_.min_height;
+    motion_cfg.CLICK_CAPTURE_SIZE = cfg_.CLICK_CAPTURE_SIZE;
+    motion_cfg.MOTION_FRAMES = cfg_.MOTION_FRAMES;
+    motion_cfg.MOTION_DIFF_THRESHOLD = cfg_.MOTION_DIFF_THRESHOLD;
+    motion_cfg.CLICK_PADDING = cfg_.CLICK_PADDING;
+    motion_cfg.TRACKER_INIT_PADDING = cfg_.TRACKER_INIT_PADDING;
+    motion_cfg.TRACKER_MIN_SIZE = cfg_.TRACKER_MIN_SIZE;
+    motion_cfg.MOTION_MIN_MAGNITUDE = cfg_.MOTION_MIN_MAGNITUDE;
+    motion_cfg.MOTION_ANGLE_TOLERANCE_DEG = cfg_.MOTION_ANGLE_TOLERANCE_DEG;
+    motion_cfg.MOTION_MAG_TOLERANCE_PX = cfg_.MOTION_MAG_TOLERANCE_PX;
+    motion_cfg.MAX_FEATURES = cfg_.MOTION_MAX_FEATURES;
+    motion_cfg.QUALITY_LEVEL = cfg_.MOTION_QUALITY_LEVEL;
+    motion_cfg.MIN_DISTANCE = cfg_.MOTION_MIN_DISTANCE;
+    motion_cfg.ANGLE_BIN_DEG = cfg_.MOTION_ANGLE_BIN_DEG;
+    motion_cfg.MAG_BIN_PX = cfg_.MOTION_MAG_BIN_PX;
+    motion_cfg.GRID_STEP_RATIO = cfg_.MOTION_GRID_STEP_RATIO;
+    motion_cfg.MIN_STABLE_RATIO = cfg_.MOTION_MIN_STABLE_RATIO;
+    motion_cfg.MIN_AREA = cfg_.MIN_AREA;
+    motion_cfg.MIN_WIDTH = cfg_.MIN_WIDTH;
+    motion_cfg.MIN_HEIGHT = cfg_.MIN_HEIGHT;
     motion_detector_.update_config(motion_cfg);
 }
 
@@ -80,29 +84,43 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         if (!cfg) {
             throw std::runtime_error("missing [manual_tracker] table");
         }
-        cfg_.max_targets = read_required<int>(*cfg, "max_targets");
-        cfg_.click_padding = read_required<int>(*cfg, "click_padding");
-        cfg_.motion_diff_threshold = read_required<int>(*cfg, "motion_diff_threshold");
-        cfg_.click_capture_size = read_required<int>(*cfg, "click_capture_size");
-        cfg_.motion_frames = read_required<int>(*cfg, "motion_frames");
-        cfg_.overlay_ttl_seconds = read_required<int>(*cfg, "overlay_ttl_seconds");
-        cfg_.tracker_init_padding = read_required<int>(*cfg, "tracker_init_padding");
-        cfg_.tracker_min_size = read_required<int>(*cfg, "tracker_min_size");
-        cfg_.motion_min_magnitude = read_required<float>(*cfg, "motion_min_magnitude");
-        cfg_.motion_mag_tolerance_px = read_required<float>(*cfg, "motion_mag_tolerance_px");
-        cfg_.tracker_rebind_ms = read_required<int>(*cfg, "tracker_rebind_ms");
-        cfg_.watchdog_period_ms = read_required<int>(*cfg, "watchdog_period_ms");
-        cfg_.watchdog_motion_ratio = read_required<float>(*cfg, "watchdog_motion_ratio");
-        cfg_.motion_detection_iterations = read_required<int>(*cfg, "motion_detection_iterations");
-        cfg_.motion_detection_diffusion_px = read_required<float>(*cfg, "motion_detection_diffusion_px");
-        cfg_.motion_detection_cluster_ratio = read_required<float>(*cfg, "motion_detection_cluster_ratio");
-        cfg_.floodfill_fill_overlay = read_required<bool>(*cfg, "floodfill_fill_overlay");
-        cfg_.floodfill_lo_diff = read_required<int>(*cfg, "floodfill_lo_diff");
-        cfg_.floodfill_hi_diff = read_required<int>(*cfg, "floodfill_hi_diff");
-        cfg_.min_area = read_required<int>(*cfg, "min_area");
-        cfg_.min_width = read_required<int>(*cfg, "min_width");
-        cfg_.min_height = read_required<int>(*cfg, "min_height");
-        cfg_.tracker_type = read_required<std::string>(*cfg, "tracker_type");
+        cfg_.MAX_TARGETS = read_required<int>(*cfg, "MAX_TARGETS");
+        cfg_.CLICK_PADDING = read_required<int>(*cfg, "CLICK_PADDING");
+        cfg_.MOTION_DIFF_THRESHOLD = read_required<int>(*cfg, "MOTION_DIFF_THRESHOLD");
+        cfg_.CLICK_CAPTURE_SIZE = read_required<int>(*cfg, "CLICK_CAPTURE_SIZE");
+        cfg_.MOTION_FRAMES = read_required<int>(*cfg, "MOTION_FRAMES");
+        cfg_.MOTION_ANGLE_TOLERANCE_DEG = read_required<float>(*cfg, "MOTION_ANGLE_TOLERANCE_DEG");
+        cfg_.OVERLAY_TTL_SECONDS = read_required<int>(*cfg, "OVERLAY_TTL_SECONDS");
+        cfg_.TRACKER_INIT_PADDING = read_required<int>(*cfg, "TRACKER_INIT_PADDING");
+        cfg_.TRACKER_MIN_SIZE = read_required<int>(*cfg, "TRACKER_MIN_SIZE");
+        cfg_.MOTION_MIN_MAGNITUDE = read_required<float>(*cfg, "MOTION_MIN_MAGNITUDE");
+        cfg_.MOTION_MAG_TOLERANCE_PX = read_required<float>(*cfg, "MOTION_MAG_TOLERANCE_PX");
+        cfg_.MOTION_MAX_FEATURES = read_required<int>(*cfg, "MOTION_MAX_FEATURES");
+        cfg_.MOTION_QUALITY_LEVEL = read_required<float>(*cfg, "MOTION_QUALITY_LEVEL");
+        cfg_.MOTION_MIN_DISTANCE = read_required<float>(*cfg, "MOTION_MIN_DISTANCE");
+        cfg_.MOTION_ANGLE_BIN_DEG = read_required<float>(*cfg, "MOTION_ANGLE_BIN_DEG");
+        cfg_.MOTION_MAG_BIN_PX = read_required<float>(*cfg, "MOTION_MAG_BIN_PX");
+        cfg_.MOTION_GRID_STEP_RATIO = read_required<float>(*cfg, "MOTION_GRID_STEP_RATIO");
+        cfg_.MOTION_MIN_STABLE_RATIO = read_required<float>(*cfg, "MOTION_MIN_STABLE_RATIO");
+        cfg_.WATCHDOG_PERIOD_MS = read_required<int>(*cfg, "WATCHDOG_PERIOD_MS");
+        cfg_.WATCHDOG_MOTION_RATIO = read_required<float>(*cfg, "WATCHDOG_MOTION_RATIO");
+        cfg_.WATCHDOG_ANGLE_TOLERANCE_DEG = read_required<float>(*cfg, "WATCHDOG_ANGLE_TOLERANCE_DEG");
+        cfg_.VISIBILITY_HISTORY_SIZE = read_required<int>(*cfg, "VISIBILITY_HISTORY_SIZE");
+        cfg_.RESERVED_CANDIDATE_TTL_MS = read_required<int>(*cfg, "RESERVED_CANDIDATE_TTL_MS");
+        cfg_.MOTION_DETECTION_ITERATIONS = read_required<int>(*cfg, "MOTION_DETECTION_ITERATIONS");
+        cfg_.MOTION_DETECTION_DIFFUSION_PX = read_required<float>(*cfg, "MOTION_DETECTION_DIFFUSION_PX");
+        cfg_.MOTION_DETECTION_CLUSTER_RATIO = read_required<float>(*cfg, "MOTION_DETECTION_CLUSTER_RATIO");
+        cfg_.AUTO_HISTORY_SIZE = read_required<int>(*cfg, "AUTO_HISTORY_SIZE");
+        cfg_.AUTO_DIFF_THRESHOLD = read_required<int>(*cfg, "AUTO_DIFF_THRESHOLD");
+        cfg_.AUTO_MIN_AREA = read_required<double>(*cfg, "AUTO_MIN_AREA");
+        cfg_.FLOODFILL_FILL_OVERLAY = read_required<bool>(*cfg, "FLOODFILL_FILL_OVERLAY");
+        cfg_.FLOODFILL_OVERLAY_ALPHA = read_required<float>(*cfg, "FLOODFILL_OVERLAY_ALPHA");
+        cfg_.MIN_AREA = read_required<int>(*cfg, "MIN_AREA");
+        cfg_.MIN_WIDTH = read_required<int>(*cfg, "MIN_WIDTH");
+        cfg_.MIN_HEIGHT = read_required<int>(*cfg, "MIN_HEIGHT");
+        cfg_.TRACKER_TYPE = read_required<std::string>(*cfg, "TRACKER_TYPE");
+        cfg_.VISIBILITY_HISTORY_SIZE = std::max(1, cfg_.VISIBILITY_HISTORY_SIZE);
+        cfg_.RESERVED_CANDIDATE_TTL_MS = std::max(0, cfg_.RESERVED_CANDIDATE_TTL_MS);
         return true;
     } catch (const std::exception& e) {
         std::cerr << "[MANUAL] config load failed: " << e.what() << std::endl;
@@ -117,16 +135,23 @@ bool ManualTrackerManager::point_in_rect_with_padding(const cv::Rect2f& rect, in
     return padded.contains(cv::Point2f(static_cast<float>(x), static_cast<float>(y)));
 }
 
-// Записывает видимость трека в кольцевую историю последних трех кадров.
-// Это ядро правила "3 кадра без обновления -> показать серый bbox".
+// Записывает видимость трека в кольцевую историю последних N кадров.
+// Это ядро правила "N кадров без обновления -> показать серый bbox".
 void ManualTrackerManager::record_visibility(ManualTrack& track, bool visible) {
+    const size_t history_size = track.visibility_history.size();
+    if (history_size == 0) {
+        return;
+    }
     track.visibility_history[track.visibility_index] = visible;
-    track.visibility_index = (track.visibility_index + 1) % kVisibilityHistorySize;
+    track.visibility_index = (track.visibility_index + 1) % history_size;
 }
 
-// Проверяет, что трек не был виден в последних трех кадрах.
+// Проверяет, что трек не был виден в последних N кадрах.
 // Возвращает true, когда цель считается потерянной для отрисовки.
 bool ManualTrackerManager::has_recent_visibility_loss(const ManualTrack& track) const {
+    if (track.visibility_history.empty()) {
+        return false;
+    }
     return std::all_of(track.visibility_history.begin(),
                        track.visibility_history.end(),
                        [](bool visible) { return !visible; });
@@ -169,7 +194,7 @@ bool ManualTrackerManager::has_group_motion(const cv::Mat& prev_gray,
         for (int x = 0; x < flow.cols; ++x) {
             const cv::Vec2f vec = row[x];
             const float mag = std::hypot(vec[0], vec[1]);
-            if (mag >= cfg_.motion_min_magnitude) {
+            if (mag >= cfg_.MOTION_MIN_MAGNITUDE) {
                 sum_dx += vec[0];
                 sum_dy += vec[1];
                 ++moving_pixels;
@@ -184,18 +209,18 @@ bool ManualTrackerManager::has_group_motion(const cv::Mat& prev_gray,
     const double mean_dx = sum_dx / moving_pixels;
     const double mean_dy = sum_dy / moving_pixels;
     const double mean_mag = std::hypot(mean_dx, mean_dy);
-    if (mean_mag < cfg_.motion_min_magnitude) {
+    if (mean_mag < cfg_.MOTION_MIN_MAGNITUDE) {
         return false;
     }
 
-    const double cos_tol = std::cos(kWatchdogAngleTolDeg * CV_PI / 180.0);
+    const double cos_tol = std::cos(cfg_.WATCHDOG_ANGLE_TOLERANCE_DEG * CV_PI / 180.0);
     int aligned_pixels = 0;
     for (int y = 0; y < flow.rows; ++y) {
         const auto* row = flow.ptr<cv::Vec2f>(y);
         for (int x = 0; x < flow.cols; ++x) {
             const cv::Vec2f vec = row[x];
             const float mag = std::hypot(vec[0], vec[1]);
-            if (mag < cfg_.motion_min_magnitude) {
+            if (mag < cfg_.MOTION_MIN_MAGNITUDE) {
                 continue;
             }
             const double dot = vec[0] * mean_dx + vec[1] * mean_dy;
@@ -206,27 +231,34 @@ bool ManualTrackerManager::has_group_motion(const cv::Mat& prev_gray,
         }
     }
 
-    return static_cast<float>(aligned_pixels) >= static_cast<float>(total_pixels) * cfg_.watchdog_motion_ratio;
+    return static_cast<float>(aligned_pixels) >= static_cast<float>(total_pixels) * cfg_.WATCHDOG_MOTION_RATIO;
 }
 
 
 // Метод перевода трека в состояние потери цели. Работает совместно с has_group_motion
 void ManualTrackerManager::mark_track_lost(ManualTrack& track, long long now_ms) {
     track.lost_since_ms = now_ms;
-    track.visibility_history.fill(false);
+    if (track.visibility_history.empty()) {
+        track.visibility_history.assign(static_cast<size_t>(cfg_.VISIBILITY_HISTORY_SIZE), false);
+    } else {
+        std::fill(track.visibility_history.begin(), track.visibility_history.end(), false);
+    }
     track.visibility_index = 0;
     track.candidate_search.reset();
     track.candidate_search.configure_motion_filter(
-            cfg_.motion_detection_iterations,
-            cfg_.motion_detection_diffusion_px,
-            cfg_.motion_detection_cluster_ratio
+            cfg_.MOTION_DETECTION_ITERATIONS,
+            cfg_.MOTION_DETECTION_DIFFUSION_PX,
+            cfg_.MOTION_DETECTION_CLUSTER_RATIO,
+            cfg_.AUTO_HISTORY_SIZE,
+            cfg_.AUTO_DIFF_THRESHOLD,
+            cfg_.AUTO_MIN_AREA
     );
 }
 
 // Создаёт экземпляр OpenCV-трекера на основе настроек.
 // Поддерживает KCF и CSRT.
 cv::Ptr<cv::Tracker> ManualTrackerManager::create_tracker() const {
-    std::string type = cfg_.tracker_type;
+    std::string type = cfg_.TRACKER_TYPE;
     std::transform(type.begin(), type.end(), type.begin(), [](unsigned char ch) {
         return static_cast<char>(std::toupper(ch));
     });
@@ -245,14 +277,14 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
     // Сначала проверяем, не кликнули ли по существующему боксу — тогда удаляем цель.
     // Цикл: ищет первый трек, чей bbox покрывает клик (с паддингом), и удаляет его.
     for (auto it = tracks_.begin(); it != tracks_.end(); ++it) {
-        if (point_in_rect_with_padding(it->bbox, x, y, cfg_.click_padding)) {
+        if (point_in_rect_with_padding(it->bbox, x, y, cfg_.CLICK_PADDING)) {
             tracks_.erase(it);
             refresh_targets();
             return true;
         }
     }
 
-    if (static_cast<int>(tracks_.size()) >= cfg_.max_targets) {
+    if (static_cast<int>(tracks_.size()) >= cfg_.MAX_TARGETS) {
         return false;
     }
 
@@ -271,7 +303,7 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
     pending.roi = roi;
     pending.gray_frames.push_back(to_gray(frame));
     pending_clicks_.push_back(std::move(pending));
-    if (log_cfg_.manual_detector_level_logger) {
+    if (log_cfg_.MANUAL_DETECTOR_LEVEL_LOGGER) {
         std::cout << "[MANUAL] pending motion click id=" << next_id_
                   << " roi=" << roi.width << "x" << roi.height << std::endl;
     }
@@ -279,7 +311,7 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
 }
 
 // Основной цикл обновления: обрабатывает pending-клики, треки и выводит Target-ы.
-// Здесь же формируется логика "3 кадра без обновления -> серый bbox".
+// Здесь же формируется логика "N кадров без обновления -> серый bbox".
 void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -290,7 +322,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 
     cv::Mat current_gray = to_gray(frame);
     const bool should_run_watchdog = !watchdog_prev_gray_.empty()
-                                     && (now_ms - watchdog_prev_ms_ >= cfg_.watchdog_period_ms);
+                                     && (now_ms - watchdog_prev_ms_ >= cfg_.WATCHDOG_PERIOD_MS);
 
     std::vector<cv::Rect2f> tracked_boxes;
     tracked_boxes.reserve(tracks_.size());
@@ -325,7 +357,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 continue;
             }
 
-            if (static_cast<int>(tracks_.size()) >= cfg_.max_targets) {
+            if (static_cast<int>(tracks_.size()) >= cfg_.MAX_TARGETS) {
                 it = pending_clicks_.erase(it);
                 continue;
             }
@@ -335,7 +367,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             cv::Rect2f tracker_roi;
             if (motion_detector_.build_candidate(it->gray_frames, it->roi, frame.size(),
                                                  tracker_roi, &motion_points, &motion_roi)) {
-                if (log_cfg_.manual_detector_level_logger) {
+                if (log_cfg_.MANUAL_DETECTOR_LEVEL_LOGGER) {
                     std::cout << "[MANUAL] capture dynamic click id=" << next_id_ << std::endl;
                 }
 
@@ -345,7 +377,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 track.tracker = create_tracker();
                 track.tracker->init(frame, track.bbox);
                 track.lost_since_ms = 0;
-                track.visibility_history.fill(true);
+                track.visibility_history.assign(static_cast<size_t>(cfg_.VISIBILITY_HISTORY_SIZE), true);
                 track.visibility_index = 0;
                 track.cross_center = (motion_roi.area() > 1.0f)
                                      ? rect_center(motion_roi)
@@ -353,15 +385,18 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                 track.last_known_center = track.cross_center;
                 track.candidate_search.configure(&motion_detector_);
                 track.candidate_search.configure_motion_filter(
-                        cfg_.motion_detection_iterations,
-                        cfg_.motion_detection_diffusion_px,
-                        cfg_.motion_detection_cluster_ratio
+                        cfg_.MOTION_DETECTION_ITERATIONS,
+                        cfg_.MOTION_DETECTION_DIFFUSION_PX,
+                        cfg_.MOTION_DETECTION_CLUSTER_RATIO,
+                        cfg_.AUTO_HISTORY_SIZE,
+                        cfg_.AUTO_DIFF_THRESHOLD,
+                        cfg_.AUTO_MIN_AREA
                 );
 
                 tracks_.push_back(std::move(track));
                 refresh_targets();
 
-                if (cfg_.floodfill_fill_overlay) {
+                if (cfg_.FLOODFILL_FILL_OVERLAY) {
                     flood_fill_mask_ = cv::Mat::zeros(frame.size(), CV_8UC1);
                     flood_fill_overlay_ = cv::Mat::zeros(frame.size(), frame.type());
                     if (motion_points.size() >= 3) {
@@ -385,16 +420,16 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                         }
                     }
                     flood_fill_overlay_.setTo(cv::Scalar(0, 0, 255), flood_fill_mask_);
-                    overlay_expire_ms_ = now_ms + static_cast<long long>(cfg_.overlay_ttl_seconds) * 1000;
+                    overlay_expire_ms_ = now_ms + static_cast<long long>(cfg_.OVERLAY_TTL_SECONDS) * 1000;
                 }
 
-                if (log_cfg_.tracker_level_logger) {
+                if (log_cfg_.TRACKER_LEVEL_LOGGER) {
                     std::cout << "[TRK] start dynamic id=" << (next_id_ - 1) << std::endl;
                 }
-                if (log_cfg_.target_object_created_logger) {
+                if (log_cfg_.TARGET_OBJECT_CREATED_LOGGER) {
                     std::cout << "[MANUAL] target object created id=" << (next_id_ - 1) << std::endl;
                 }
-            } else if (log_cfg_.manual_detector_level_logger) {
+            } else if (log_cfg_.MANUAL_DETECTOR_LEVEL_LOGGER) {
                 std::cout << "[MANUAL] motion click ignored (static) id=" << next_id_ << std::endl;
             }
             it = pending_clicks_.erase(it);
@@ -432,7 +467,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 
         if (should_run_watchdog && it->lost_since_ms == 0) {
             if (!has_group_motion(watchdog_prev_gray_, current_gray, it->bbox)) {
-                if (log_cfg_.manual_detector_level_logger) {
+                if (log_cfg_.MANUAL_DETECTOR_LEVEL_LOGGER) {
                     std::cout << "[MANUAL] watchdog motion lost id=" << it->id << std::endl;
                 }
                 mark_track_lost(*it, now_ms);
@@ -445,17 +480,21 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             }
             cv::Rect2f candidate_bbox;
             if (it->candidate_search.update(frame, candidate_bbox)) {
-                if (log_cfg_.manual_detector_level_logger) {
+                if (log_cfg_.MANUAL_DETECTOR_LEVEL_LOGGER) {
                     std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
                 }
                 it->bbox = candidate_bbox;
-                reserved_candidates_.push_back({candidate_bbox, now_ms + kReservedCandidateTtlMs});
+                reserved_candidates_.push_back({candidate_bbox, now_ms + cfg_.RESERVED_CANDIDATE_TTL_MS});
                 reserved_boxes.push_back(candidate_bbox);
                 it->cross_center = rect_center(it->bbox);
                 it->tracker = create_tracker();
                 it->tracker->init(frame, it->bbox);
                 it->lost_since_ms = 0;
-                it->visibility_history.fill(true);
+                if (it->visibility_history.empty()) {
+                    it->visibility_history.assign(static_cast<size_t>(cfg_.VISIBILITY_HISTORY_SIZE), true);
+                } else {
+                    std::fill(it->visibility_history.begin(), it->visibility_history.end(), true);
+                }
                 it->visibility_index = 0;
                 it->last_known_center = it->cross_center;
                 it->candidate_search.reset();
@@ -476,10 +515,10 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         flood_fill_mask_.release();
         overlay_expire_ms_ = 0;
     }
-    if (cfg_.floodfill_fill_overlay && !flood_fill_overlay_.empty() && !flood_fill_mask_.empty()) {
+    if (cfg_.FLOODFILL_FILL_OVERLAY && !flood_fill_overlay_.empty() && !flood_fill_mask_.empty()) {
         cv::Mat blended;
-        constexpr double kOverlayAlpha = 0.7;
-        cv::addWeighted(frame, 1.0 - kOverlayAlpha, flood_fill_overlay_, kOverlayAlpha, 0.0, blended);
+        const double overlay_alpha = cfg_.FLOODFILL_OVERLAY_ALPHA;
+        cv::addWeighted(frame, 1.0 - overlay_alpha, flood_fill_overlay_, overlay_alpha, 0.0, blended);
         blended.copyTo(frame, flood_fill_mask_);
     }
 }

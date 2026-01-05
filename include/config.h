@@ -23,21 +23,12 @@ static T read_required(const toml::table &tbl, std::string_view key) {
 
 
 
-struct OverlayConfig {
-    float hud_alpha = 0.25f; // - hud_alpha: прозрачность HUD.
-
-    float unselected_alpha_when_selected = 0.3f; // - unselected_alpha_when_selected: прозрачность невыбранных bbox.
-    // -------------------------- [smoothing] ---------------------------
-    int dynamic_bbox_window = 5; // - dynamic_bbox_window: окно сглаживания bbox.
-};
-
 struct LoggingConfig {
-    bool rtsp_level_logger_on = false; // - rtsp_level_logger_on: логировать события RTSP уровня.
-    bool manual_detector_level_logger = true; // - manual_detector_level_logger: логировать ручной детектор.
-    bool tracker_level_logger = true; // - tracker_level_logger: логировать трекер.
-    bool reacquire_level_logger = true; // - reacquire_level_logger: логировать перепривязку.
-    bool mouse_click_logger = true; // - mouse_click_logger: логировать клики мыши.
-    bool target_object_created_logger = true; // - target_object_created_logger: логировать создание целей.
+    bool RTSP_LEVEL_LOGGER_ON = false; // - RTSP_LEVEL_LOGGER_ON: логировать события RTSP уровня.
+    bool MANUAL_DETECTOR_LEVEL_LOGGER = true; // - MANUAL_DETECTOR_LEVEL_LOGGER: логировать ручной детектор.
+    bool TRACKER_LEVEL_LOGGER = true; // - TRACKER_LEVEL_LOGGER: логировать трекер.
+    bool MOUSE_CLICK_LOGGER = true; // - MOUSE_CLICK_LOGGER: логировать клики мыши.
+    bool TARGET_OBJECT_CREATED_LOGGER = true; // - TARGET_OBJECT_CREATED_LOGGER: логировать создание целей.
 };
 
 // Загружает конфигурацию логирования из секции [logging].
@@ -46,10 +37,9 @@ static inline void load_logging_config(const toml::table& tbl, LoggingConfig& cf
     if (!logging) {
         throw std::runtime_error("missing [logging] table");
     }
-    cfg.rtsp_level_logger_on = read_required<bool>(*logging, "rtsp_level_logger_on");
-    cfg.manual_detector_level_logger = read_required<bool>(*logging, "manual_detector_level_logger");
-    cfg.tracker_level_logger = read_required<bool>(*logging, "tracker_level_logger");
-    cfg.reacquire_level_logger = read_required<bool>(*logging, "reacquire_level_logger");
-    cfg.mouse_click_logger = read_required<bool>(*logging, "mouse_click_logger");
-    cfg.target_object_created_logger = read_required<bool>(*logging, "target_object_created_logger");
+    cfg.RTSP_LEVEL_LOGGER_ON = read_required<bool>(*logging, "RTSP_LEVEL_LOGGER_ON");
+    cfg.MANUAL_DETECTOR_LEVEL_LOGGER = read_required<bool>(*logging, "MANUAL_DETECTOR_LEVEL_LOGGER");
+    cfg.TRACKER_LEVEL_LOGGER = read_required<bool>(*logging, "TRACKER_LEVEL_LOGGER");
+    cfg.MOUSE_CLICK_LOGGER = read_required<bool>(*logging, "MOUSE_CLICK_LOGGER");
+    cfg.TARGET_OBJECT_CREATED_LOGGER = read_required<bool>(*logging, "TARGET_OBJECT_CREATED_LOGGER");
 }

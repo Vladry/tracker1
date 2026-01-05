@@ -2,6 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include <chrono>
 #include <iostream>
+#include <filesystem>
 #include <vector>
 #include "frame_store.h"
 #include "rtsp_worker.h"
@@ -13,6 +14,7 @@
 #include <thread>
 #include "display_loop.h"
 #include "other_handlers.h"
+#include "config.h"
 
 #define SHOW_IDS = false;
 
@@ -36,9 +38,28 @@ static toml::table load_config_tables() {
         }
         combined.insert_or_assign(std::string(key), *table);
     };
+    auto merge_optional_file = [&](const std::string& path, std::string_view key) {
+        if (!std::filesystem::exists(path)) {
+            std::cout << "[CONFIG] optional file missing: " << path << std::endl;
+            return;
+        }
+        try {
+            const toml::table tbl = toml::parse_file(path);
+            const auto* table = tbl.get_as<toml::table>(key);
+            if (!table) {
+                std::cout << "[CONFIG] optional table missing: [" << key << "] in " << path << std::endl;
+                return;
+            }
+            combined.insert_or_assign(std::string(key), *table);
+        } catch (const toml::parse_error& err) {
+            std::cout << "[CONFIG] optional file parse failed: " << path
+                      << " error=" << err.description() << std::endl;
+        } catch (const std::exception& err) {
+            std::cout << "[CONFIG] optional file parse failed: " << path
+                      << " error=" << err.what() << std::endl;
+        }
+    };
 
-    const toml::table rknn = toml::parse_file("RKNN.toml");
-    merge_table(rknn, "detector");
 
     const toml::table trackers = toml::parse_file("trackers.toml");
     merge_table(trackers, "tracker");
@@ -52,6 +73,8 @@ static toml::table load_config_tables() {
 
     const toml::table overlay = toml::parse_file("overlay.toml");
     merge_table(overlay, "overlay");
+
+    merge_optional_file("display.toml", "display");
 
     const toml::table rebind_smoothing = toml::parse_file("rebind_smoothing.toml");
     merge_table(rebind_smoothing, "static_rebind");
@@ -83,7 +106,7 @@ void on_mouse(int event, int x, int y, int, void *) {
 
     std::lock_guard<std::mutex> lock(g_last_frame_mutex);
     if (g_last_frame.empty()) {
-        if (g_logging.mouse_click_logger) {
+        if (g_logging.MOUSE_CLICK_LOGGER) {
             std::cout << "[MOUSE] click x=" << x << " y=" << y << " ignored empty frame" << std::endl;
         }
         return;
@@ -96,7 +119,7 @@ void on_mouse(int event, int x, int y, int, void *) {
     } else {
         return;
     }
-    if (g_logging.mouse_click_logger) {
+    if (g_logging.MOUSE_CLICK_LOGGER) {
         std::cout << "[MOUSE] click x=" << x << " y=" << y
                   << " button=" << ((event == cv::EVENT_RBUTTONDOWN) ? "RMB" : "LMB")
                   << " handled=" << (handled ? "true" : "false") << std::endl;
@@ -177,7 +200,15 @@ int main(int argc, char *argv[]) {
         std::cout << "[TRK] tracker thread exit" << std::endl;
     });
 
-    DisplayLoop display_loop(ui_store);
+    DisplayLoop::Config display_cfg;
+    const auto* display = tbl["display"].as_table();
+    if (display) {
+        display_cfg.TARGET_FPS = read_required<int>(*display, "TARGET_FPS");
+        display_cfg.WINDOW_NAME = read_required<std::string>(*display, "WINDOW_NAME");
+    } else {
+        std::cout << "[DISPLAY] using default settings (missing [display])" << std::endl;
+    }
+    DisplayLoop display_loop(ui_store, display_cfg);
     display_loop.run();   // ЕДИНСТВЕННЫЙ UI-LOOP
 
     // Будим возможные ожидания по кадрам.
@@ -187,7 +218,7 @@ int main(int argc, char *argv[]) {
     if (tracker_thread.joinable()) tracker_thread.join();
 
 
-    // Запрос на остановку RTSP/потоков уже выставлен через g_running.
+    // Запрос на остановку RTSP/пооков уже выставлен через g_running.
     // Аккуратно завершаем RTSP.
     rtsp.stop();
 

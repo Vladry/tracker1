@@ -12,6 +12,7 @@ public:
     void set_detector(const ManualMotionDetector* detector);
     void set_tracked_boxes(const std::vector<cv::Rect2f>& tracked_boxes);
     void set_detection_params(int iterations, float diffusion_pixels, float cluster_ratio_threshold);
+    void set_motion_params(int history_size, int diff_threshold, double min_area);
     void reset_state();
 
     bool find_best_candidate(const cv::Mat& frame, int cx, int cy, cv::Point2f& out_point);
@@ -31,4 +32,7 @@ private:
     int detection_iterations_ = 10;
     float diffusion_pixels_ = 100.0f;
     float cluster_ratio_threshold_ = 0.9f;
+    int history_size_ = 5;
+    int diff_threshold_ = 25;
+    double min_area_ = 60.0;
 };

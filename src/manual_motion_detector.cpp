@@ -5,7 +5,7 @@
 
 namespace {
     // Возвращает минимальный угол между направлениями a и b в радианах.
-    // Нужен для проверки стабильности направления движения между кадрами.
+    // Нужен для проверки стабильности направления движения между кадрми.
     static inline float angle_between(float a, float b) {
         constexpr float kPi = 3.14159265f;
         float diff = std::fabs(a - b);
@@ -48,7 +48,7 @@ namespace {
 
 // Возвращает число кадров, необходимых для анализа движения (motion_frames + базовый кадр).
 int ManualMotionDetector::required_frames() const {
-    return std::max(1, cfg_.motion_frames) + 1;
+    return std::max(1, cfg_.MOTION_FRAMES) + 1;
 }
 
 // Формирует ROI вокруг клика, ограничивая его границами кадра.
@@ -57,7 +57,7 @@ cv::Rect ManualMotionDetector::make_click_roi(const cv::Mat& frame, int x, int y
     if (frame.empty()) {
         return {};
     }
-    const int size = std::max(2, cfg_.click_capture_size);
+    const int size = std::max(2, cfg_.CLICK_CAPTURE_SIZE);
     const int half = size / 2;
     const int x1 = std::max(0, x - half);
     const int y1 = std::max(0, y - half);
@@ -85,35 +85,29 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
         return {};                                // Если мало кадров или ROI некорректен, движения не определить.
     }
 
-    constexpr int kMaxFeatures = 200;             // kMaxFeatures: максимальное число ключевых точек (features),
-    //              которые будем трекать. Больше — лучше покрытие,
-    //              но дороже по вычислениям.
-    constexpr float kQuality = 0.01f;             // kQuality: порог качества для goodFeaturesToTrack.
-    //            Меньше — больше точек, но потенциально шумнее.
-    constexpr float kMinDistance = 3.0f;          // kMinDistance: минимальная дистанция между найденными точками.
-    //              Предотвращает "слипание" features.
-    const float kAngleTolDeg = std::max(1.0f, cfg_.motion_angle_tolerance_deg);
+    const int max_features = std::max(1, cfg_.MAX_FEATURES);             // max_features: максимум ключевых точек.
+    const float quality = std::max(0.0f, cfg_.QUALITY_LEVEL);            // quality: порог качества goodFeaturesToTrack.
+    const float min_distance = std::max(0.0f, cfg_.MIN_DISTANCE);         // min_distance: минимум дистанции между точками.
+    const float kAngleTolDeg = std::max(1.0f, cfg_.MOTION_ANGLE_TOLERANCE_DEG);
     // kAngleTolDeg: допуск угла движения (в градусах),
     //               взят из конфигурации, но не меньше 1.0.
     //               Определяет, насколько строго считаем
     //               наравление движения согласованным.
-    const float kMagTolPx = std::max(0.1f, cfg_.motion_mag_tolerance_px);
+    const float kMagTolPx = std::max(0.1f, cfg_.MOTION_MAG_TOLERANCE_PX);
     // kMagTolPx: допуск по длине шага (в пикселях),
     //            из конфигурации. Меньше 0.1 не даём,
     //            чтобы не было слишком жёсткой фильтрации.
-    const float kMinMotionPx = std::max(0.05f, cfg_.motion_min_magnitude);
+    const float kMinMotionPx = std::max(0.05f, cfg_.MOTION_MIN_MAGNITUDE);
     // kMinMotionPx: минимальная средняя длина вектора движения.
     //              Фильтрует почти неподвижные точки (шум).
-    constexpr float kAngleBinDeg = 10.0f;         // kAngleBinDeg: размер бина для кластеризации направлений (в градусах).
-    //                Чем меньше — тем тоньше кластеризация.
-    constexpr float kMagBinPx = 2.0f;             // kMagBinPx: размер бина для кластеризации длины шага (в пикселях).
-    //            Чем меньше — тем точнее, но больше кластеров.
+    const float angle_bin_deg = std::max(0.1f, cfg_.ANGLE_BIN_DEG);       // angle_bin_deg: размер бина направлений.
+    const float mag_bin_px = std::max(0.1f, cfg_.MAG_BIN_PX);             // mag_bin_px: размер бина длины шага.
 
     constexpr float kPi = 3.14159265f;            // kPi: π, используется для перевода градусов в радианы.
     const float angle_tol = kAngleTolDeg * kPi / 180.0f;
     // angle_tol: допуск угла в радианах,
     //            используется в angle_between().
-    const float angle_bin = kAngleBinDeg * kPi / 180.0f;
+    const float angle_bin = angle_bin_deg * kPi / 180.0f;
     // angle_bin: ширина бина угла в радианах для кластеризации.
 
     const cv::Mat& base = frames.front();         // base: первый кадр — база для поиска начальных точек.
@@ -121,7 +115,7 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
     //            только её анализируем.
 
     std::vector<cv::Point2f> points;              // points: исходные точки (features) в ROI.
-    cv::goodFeaturesToTrack(roi_gray, points, kMaxFeatures, kQuality, kMinDistance);
+    cv::goodFeaturesToTrack(roi_gray, points, max_features, quality, min_distance);
     // Находит сильные углы/текстуры в ROI.
     if (points.empty()) {
         return {};                                // Нет точек → нет данных для движения.
@@ -223,7 +217,7 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
                                     cand.mean_step.y * cand.mean_step.y);
         const int angle_key = static_cast<int>(std::round(angle / angle_bin));
         // angle_key: индекс бина направления.
-        const int mag_key = static_cast<int>(std::round(mag / kMagBinPx));
+        const int mag_key = static_cast<int>(std::round(mag / mag_bin_px));
         // mag_key: индекс бина длины.
         const std::pair<int, int> key{angle_key, mag_key};
         const int count = ++bins[key];            // count: число кандидатов в этом бине.
@@ -235,7 +229,7 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
 
     const float best_angle = static_cast<float>(best_bin.first) * angle_bin;
     // best_angle: центр лучшего углового кластера (радианы).
-    const float best_mag = static_cast<float>(best_bin.second) * kMagBinPx;
+    const float best_mag = static_cast<float>(best_bin.second) * mag_bin_px;
     // best_mag: центр кластера по длине шага (пиксели).
     std::vector<cv::Point2f> selected;            // selected: итоговые точки, совпадающие с лучшим кластером.
     selected.reserve(candidates.size());
@@ -251,15 +245,15 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
 
     if (selected.empty()) {
         // Нет выбранных точек — пытаемся проверить стабильность объекта по разрежённой матрице.
-        constexpr float kGridStepRatio = 0.1f;    // kGridStepRatio: шаг сетки как доля размеров ROI.
-        constexpr float kMinStableRatio = 0.1f;   // kMinStableRatio: доля совпавших пикселей для подтверждения цели.
+        const float grid_step_ratio = std::max(0.01f, cfg_.GRID_STEP_RATIO);
+        const float min_stable_ratio = std::max(0.0f, std::min(cfg_.MIN_STABLE_RATIO, 1.0f));
         const cv::Mat& prev_frame = frames[frames.size() - 2];
         const cv::Mat& curr_frame = frames.back();
         if (prev_frame.size() != curr_frame.size()) {
             return {};                            // Несовпадение размеров кадров.
         }
-        const int step_x = std::max(1, static_cast<int>(std::round(roi.width * kGridStepRatio)));
-        const int step_y = std::max(1, static_cast<int>(std::round(roi.height * kGridStepRatio)));
+        const int step_x = std::max(1, static_cast<int>(std::round(roi.width * grid_step_ratio)));
+        const int step_y = std::max(1, static_cast<int>(std::round(roi.height * grid_step_ratio)));
         const int start_x = roi.x + step_x / 2;
         const int start_y = roi.y + step_y / 2;
         int total_samples = 0;
@@ -274,7 +268,7 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
                 const int curr_value = curr_frame.at<unsigned char>(y, x);
                 const int diff = std::abs(curr_value - prev_value);
                 ++total_samples;
-                if (diff <= cfg_.motion_diff_threshold) {
+                if (diff <= cfg_.MOTION_DIFF_THRESHOLD) {
                     ++stable_samples;
                     stable_points.emplace_back(static_cast<float>(x),
                                                static_cast<float>(y));
@@ -286,7 +280,7 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
         }
         const float stable_ratio = static_cast<float>(stable_samples) /
                                    static_cast<float>(total_samples);
-        if (stable_ratio >= kMinStableRatio) {
+        if (stable_ratio >= min_stable_ratio) {
             motion_points = std::move(stable_points);
             return clip_rect(cv::Rect2f(roi), base.size());
         }
@@ -298,50 +292,6 @@ cv::Rect2f ManualMotionDetector::build_motion_roi_from_sequence(
     return clip_rect(cv::Rect2f(rect), base.size());
     // Возвращаем bbox движения, обрезанный по кадру.
 }
-
-
-
-
-
-
-// Строит ROI движения по разнице первого и последнего кадров.
-// Используется как запасной путь, если оптический поток не дал результата.
-/*cv::Rect2f ManualMotionDetector::build_motion_roi_from_diff(
-        const std::vector<cv::Mat>& frames,
-        const cv::Rect& roi) const {
-    if (frames.size() < 2 || roi.width <= 0 || roi.height <= 0) {
-        return {};
-    }
-    const cv::Mat& first = frames.front();
-    const cv::Mat& last = frames.back();
-    cv::Mat diff;
-    cv::absdiff(first, last, diff);
-    cv::Mat roi_diff = diff(roi);
-    cv::threshold(roi_diff, roi_diff, cfg_.motion_diff_threshold, 255, cv::THRESH_BINARY);
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(roi_diff, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    if (contours.empty()) {
-        return {};
-    }
-    cv::Rect best_rect;
-    double best_area = 0.0;
-    for (const auto& contour : contours) {
-        const double area = cv::contourArea(contour);
-        if (area < cfg_.min_area * 0.5) {
-            continue;
-        }
-        if (area > best_area) {
-            best_area = area;
-            best_rect = cv::boundingRect(contour);
-        }
-    }
-    if (best_rect.area() <= 0) {
-        return {};
-    }
-    best_rect.x += roi.x;
-    best_rect.y += roi.y;
-    return clip_rect(cv::Rect2f(best_rect), first.size());
-}*/
 
 // Пытается построить кандидата трека по серии кадров.
 // Возвращает true, если найден пригодный bbox для трекера.
@@ -367,10 +317,10 @@ bool ManualMotionDetector::build_candidate(
     }*/
 
     if (motion_roi.area() > 1.0f) {
-        motion_roi.x -= cfg_.click_padding;
-        motion_roi.y -= cfg_.click_padding;
-        motion_roi.width += cfg_.click_padding * 2.0f;
-        motion_roi.height += cfg_.click_padding * 2.0f;
+        motion_roi.x -= cfg_.CLICK_PADDING;
+        motion_roi.y -= cfg_.CLICK_PADDING;
+        motion_roi.width += cfg_.CLICK_PADDING * 2.0f;
+        motion_roi.height += cfg_.CLICK_PADDING * 2.0f;
         motion_roi = clip_rect(motion_roi, frame_size);
     }
 
@@ -379,12 +329,12 @@ bool ManualMotionDetector::build_candidate(
     }
 
     if (motion_roi.area() > 1.0f &&
-        motion_roi.area() >= static_cast<float>(cfg_.min_area) &&
-        motion_roi.width >= cfg_.min_width &&
-        motion_roi.height >= cfg_.min_height) {
+        motion_roi.area() >= static_cast<float>(cfg_.MIN_AREA) &&
+        motion_roi.width >= cfg_.MIN_WIDTH &&
+        motion_roi.height >= cfg_.MIN_HEIGHT) {
         cv::Rect2f tracker_roi = motion_roi;
-        tracker_roi = expand_rect(tracker_roi, static_cast<float>(cfg_.tracker_init_padding));
-        tracker_roi = ensure_min_size(tracker_roi, static_cast<float>(cfg_.tracker_min_size));
+        tracker_roi = expand_rect(tracker_roi, static_cast<float>(cfg_.TRACKER_INIT_PADDING));
+        tracker_roi = ensure_min_size(tracker_roi, static_cast<float>(cfg_.TRACKER_MIN_SIZE));
         tracker_roi = clip_rect(tracker_roi, frame_size);
         if (tracker_roi.area() <= 1.0f) {
             return false;

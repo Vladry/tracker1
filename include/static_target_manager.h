@@ -14,19 +14,20 @@ struct StaticTarget {
 class StaticTargetManager {
 public:
     struct Config {
-        int max_targets = 5; // - max_targets: максимум статических целей.
-        int click_padding = 6; // - click_padding: паддинг вокруг ROI клика.
-        int remove_padding = 6; // - remove_padding: паддинг удаления цели по клику.
-        int fallback_box_size = 40; // - fallback_box_size: размер запасного bbox при ошибке floodfill.
-        float max_area_ratio = 0.1f; // - max_area_ratio: максимум площади ROI от площади кадра.
-        bool click_equalize = true; // - click_equalize: включение эквализации гистограммы перед floodfill.
-        int floodfill_lo_diff = 20; // - floodfill_lo_diff: нижний порог flood fill.
-        int floodfill_hi_diff = 20; // - floodfill_hi_diff: верхний порог flood fill.
-        int overlay_ttl_seconds = 3; // - overlay_ttl_seconds: время жизни оверлея floodfill.
-        int min_area = 60; // - min_area: минимальная площадь ROI.
-        int min_width = 6; // - min_width: минимальная ширина ROI.
-        int min_height = 6; // - min_height: минимальная высота ROI.
-        float min_contrast = 5.0f; // - min_contrast: минимальный контраст ROI.
+        int MAX_TARGETS = 5; // - MAX_TARGETS: максимум статических целей.
+        int CLICK_PADDING = 6; // - CLICK_PADDING: паддинг вокруг ROI клика.
+        int REMOVE_PADDING = 6; // - REMOVE_PADDING: паддинг удаления цели по клику.
+        int FALLBACK_BOX_SIZE = 40; // - FALLBACK_BOX_SIZE: размер запасного bbox при ошибке floodfill.
+        float MAX_AREA_RATIO = 0.1f; // - MAX_AREA_RATIO: максимум площади ROI от площади кадра.
+        bool CLICK_EQUALIZE = true; // - CLICK_EQUALIZE: включение эквализации гистограммы перед floodfill.
+        int FLOODFILL_LO_DIFF = 20; // - FLOODFILL_LO_DIFF: нижний порог flood fill.
+        int FLOODFILL_HI_DIFF = 20; // - FLOODFILL_HI_DIFF: верхний порог flood fill.
+        int OVERLAY_TTL_SECONDS = 3; // - OVERLAY_TTL_SECONDS: время жизни оверлея floodfill.
+        float FLOODFILL_OVERLAY_ALPHA = 0.7f; // - FLOODFILL_OVERLAY_ALPHA: альфа заливки оверлея.
+        int MIN_AREA = 60; // - MIN_AREA: минимальная площадь ROI.
+        int MIN_WIDTH = 6; // - MIN_WIDTH: минимальная ширина ROI.
+        int MIN_HEIGHT = 6; // - MIN_HEIGHT: минимальная высота ROI.
+        float MIN_CONTRAST = 5.0f; // - MIN_CONTRAST: минимальный контраст ROI.
     };
 
     // Создаёт менеджер статических целей и загружает конфигурацию.

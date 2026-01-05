@@ -4,18 +4,25 @@
 #include <vector>
 
 struct ManualMotionDetectorConfig {
-    int click_capture_size = 80; // - click_capture_size: сторона ROI вокруг клика для поиска движения.
-    int motion_frames = 3; // - motion_frames: количество кадров для анализа движения.
-    int motion_diff_threshold = 25; // - motion_diff_threshold: порог бинаризации diff-кадра.
-    int click_padding = 6; // - click_padding: дополнительный паддинг вокруг найденной области движения.
-    int tracker_init_padding = 10; // - tracker_init_padding: расширение bbox при старте OpenCV-трекера.
-    int tracker_min_size = 24; // - tracker_min_size: минимальная сторона bbox для инициализации трекера.
-    float motion_min_magnitude = 0.4f; // - motion_min_magnitude: минимальная средняя длина вектора движения.
-    float motion_angle_tolerance_deg = 20.0f; // - motion_angle_tolerance_deg: допуск по углу движения (в градусах).
-    float motion_mag_tolerance_px = 3.0f; // - motion_mag_tolerance_px: допуск по длине шага (в пикселях).
-    int min_area = 200; // - min_area: минимальная площадь ROI для создания кандидата.
-    int min_width = 10; // - min_width: минимальная ширина ROI.
-    int min_height = 10; // - min_height: минимальная высота ROI.
+    int CLICK_CAPTURE_SIZE = 80; // - CLICK_CAPTURE_SIZE: сторона ROI вокруг клика для поиска движения.
+    int MOTION_FRAMES = 3; // - MOTION_FRAMES: количество кадров для анализа движения.
+    int MOTION_DIFF_THRESHOLD = 25; // - MOTION_DIFF_THRESHOLD: порог бинаризации diff-кадра.
+    int CLICK_PADDING = 6; // - CLICK_PADDING: дополнительный паддинг вокруг найденной области движения.
+    int TRACKER_INIT_PADDING = 10; // - TRACKER_INIT_PADDING: расширение bbox при старте OpenCV-трекера.
+    int TRACKER_MIN_SIZE = 24; // - TRACKER_MIN_SIZE: минимальная сторона bbox для инициализации трекера.
+    float MOTION_MIN_MAGNITUDE = 0.4f; // - MOTION_MIN_MAGNITUDE: минимальная средняя длина вектора движения.
+    float MOTION_ANGLE_TOLERANCE_DEG = 20.0f; // - MOTION_ANGLE_TOLERANCE_DEG: допуск по углу движения (в градусах).
+    float MOTION_MAG_TOLERANCE_PX = 3.0f; // - MOTION_MAG_TOLERANCE_PX: допуск по длине шага (в пикселях).
+    int MAX_FEATURES = 200; // - MAX_FEATURES: максимальное число ключевых точек для goodFeaturesToTrack.
+    float QUALITY_LEVEL = 0.01f; // - QUALITY_LEVEL: порог качества для goodFeaturesToTrack.
+    float MIN_DISTANCE = 3.0f; // - MIN_DISTANCE: минимальная дистанция между ключевыми точками.
+    float ANGLE_BIN_DEG = 10.0f; // - ANGLE_BIN_DEG: размер бина направлений (градусы).
+    float MAG_BIN_PX = 2.0f; // - MAG_BIN_PX: размер бина длины шага (пиксели).
+    float GRID_STEP_RATIO = 0.1f; // - GRID_STEP_RATIO: шаг сетки для проверки стабильности (доля ROI).
+    float MIN_STABLE_RATIO = 0.1f; // - MIN_STABLE_RATIO: доля совпавших пикселей для подтверждения цели.
+    int MIN_AREA = 200; // - MIN_AREA: минимальная площадь ROI для создания кандидата.
+    int MIN_WIDTH = 10; // - MIN_WIDTH: минимальная ширина ROI.
+    int MIN_HEIGHT = 10; // - MIN_HEIGHT: минимальная высота ROI.
 };
 
 class ManualMotionDetector {

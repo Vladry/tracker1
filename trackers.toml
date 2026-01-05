@@ -1,68 +1,117 @@
 [tracker]
+# Минимальный IoU для ассоциации детекций.
+IOU_THRESHOLD = 0.25
+
+# Допустимое число пропусков кадров.
+MAX_MISSED_FRAMES = 30
+
+# Максимальное число целей.
+MAX_TARGETS = 10
+
+# Оставлять только ведущую цель.
+LEADING_ONLY = false
+
+# Минимальная скорость для учёта направления.
+LEADING_MIN_SPEED = 2.0
 
 [manual_tracker]
 # Максимальное количество одновременно отслеживаемых целей.
-max_targets = 10
+MAX_TARGETS = 10
 
 # Дополнительные пиксели, добавляемые к найденному ROI при клике.
-click_padding = 6
-
+CLICK_PADDING = 6
 
 # Порог разницы яркости для поиска движения (0..255).
-motion_diff_threshold = 15
+MOTION_DIFF_THRESHOLD = 15
 
 # Размер квадратной области вокруг клика для анализа движения (пиксели).
-click_capture_size = 20
+CLICK_CAPTURE_SIZE = 20
 
 # Количество последующих кадров для анализа движения пикселей.
-motion_frames = 2
+MOTION_FRAMES = 2
+
+# Допуск угла движения (градусы).
+MOTION_ANGLE_TOLERANCE_DEG = 20.0
 
 # Дополнительное расширение bbox при инициализации трекера.
-tracker_init_padding = 2
+TRACKER_INIT_PADDING = 2
 
 # Минимальный размер bbox для инициализации трекера.
-tracker_min_size = 14
+TRACKER_MIN_SIZE = 14
 
 # Минимальная амплитуда движения (пиксели) для отбора точек.
-motion_min_magnitude = 0.2
+MOTION_MIN_MAGNITUDE = 0.2
 
 # Допуск по модулю смещения (пиксели).
-motion_mag_tolerance_px = 3.0
+MOTION_MAG_TOLERANCE_PX = 3.0
 
-# ВЕРНУТЬ НАЗНАЧЕНИЕ:    motion_angle_tolerance_deg    Использовано в:  const float kAngleTolDeg = std::max(1.0f, cfg_.motion_angle_tolerance_deg);
+# Максимальное число ключевых точек для goodFeaturesToTrack.
+MOTION_MAX_FEATURES = 200
 
-# Время ожидания перед автоперепривязкой (мс).
-tracker_rebind_ms = 500
+# Порог качества для goodFeaturesToTrack.
+MOTION_QUALITY_LEVEL = 0.01
+
+# Минимальная дистанция между ключевыми точками.
+MOTION_MIN_DISTANCE = 3.0
+
+# Размер бина направлений (градусы).
+MOTION_ANGLE_BIN_DEG = 10.0
+
+# Размер бина длины шага (пиксели).
+MOTION_MAG_BIN_PX = 2.0
+
+# Шаг сетки для проверки стабильности (доля ROI).
+MOTION_GRID_STEP_RATIO = 0.1
+
+# Доля стабильных пикселей для подтверждения цели.
+MOTION_MIN_STABLE_RATIO = 0.1
 
 # Период проверки группового движения для сторожевого фильтра.
-watchdog_period_ms = 500
+WATCHDOG_PERIOD_MS = 500
 
 # Доля площади ROI с едино-направленным движением (0..1).
-watchdog_motion_ratio = 0.8
+WATCHDOG_MOTION_RATIO = 0.8
+
+# Допуск угла движения для watchdog (градусы).
+WATCHDOG_ANGLE_TOLERANCE_DEG = 20.0
+
+# Размер истории видимости для фильтра потери.
+VISIBILITY_HISTORY_SIZE = 3
+
+# TTL резерва кандидатов (мс).
+RESERVED_CANDIDATE_TTL_MS = 1500
 
 # Количество итераций детекции движения.
-motion_detection_iterations = 10
+MOTION_DETECTION_ITERATIONS = 10
 
 # Радиус кластеризации детекций (пиксели).
-motion_detection_diffusion_px = 100
+MOTION_DETECTION_DIFFUSION_PX = 100
 
 # Доля детекций в кластере для принятия (0..1).
-motion_detection_cluster_ratio = 0.9
+MOTION_DETECTION_CLUSTER_RATIO = 0.9
 
-# Заливать область flood fill красным с прозрачностью 0.7.
-floodfill_fill_overlay = true
+# История кадров для автодетекции движения.
+AUTO_HISTORY_SIZE = 5
+
+# Порог бинаризации diff для автодетекции.
+AUTO_DIFF_THRESHOLD = 25
+
+# Минимальная площадь контура для автодетекции.
+AUTO_MIN_AREA = 60.0
+
+# Заливать область flood fill красным с прозрачностью.
+FLOODFILL_FILL_OVERLAY = true
+
+# Прозрачность заливки flood fill.
+FLOODFILL_OVERLAY_ALPHA = 0.7
 
 # Через сколько секунд убрать красную область выделенного объекта.
-overlay_ttl_seconds = 1
-
-# Допуски flood fill по яркости.
-floodfill_lo_diff = 10
-floodfill_hi_diff = 20
+OVERLAY_TTL_SECONDS = 1
 
 # Минимальный размер ROI для принятия.
-min_area = 20
-min_width = 16
-min_height = 16
+MIN_AREA = 20
+MIN_WIDTH = 16
+MIN_HEIGHT = 16
 
 # Тип трекера для ручного режима: KCF, CSRT.
-tracker_type = "KCF"
+TRACKER_TYPE = "KCF"

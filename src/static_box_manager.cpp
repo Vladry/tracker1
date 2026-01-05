@@ -1,4 +1,5 @@
 #include "static_box_manager.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -30,13 +31,13 @@ void StaticBoxManager::update_trajectories(
                 boxes[i].x + boxes[i].width * 0.5f,
                 boxes[i].y + boxes[i].height * 0.5f
         );
-        if (history.points.size() > kTrajectoryHistorySize) {
+        if (history.points.size() > static_cast<size_t>(cfg_.TRAJECTORY_HISTORY_SIZE)) {
             history.points.pop_front();
         }
     }
 
     for (auto it = trajectories_.begin(); it != trajectories_.end();) {
-        if (it->second.missed_frames > cfg_.max_missed_frames) {
+        if (it->second.missed_frames > cfg_.MAX_MISSED_FRAMES) {
             it = trajectories_.erase(it);
         } else {
             ++it;
@@ -51,7 +52,7 @@ void StaticBoxManager::on_mouse_click(
 ) {
     for (size_t i = 0; i < boxes.size(); ++i) {
         if (boxes[i].contains(cv::Point2f((float) x, (float) y))) {
-            if (boxes_.size() >= static_boxes_max_amount) {
+            if (boxes_.size() >= static_cast<size_t>(cfg_.MAX_STATIC_BOXES)) {
                 boxes_.clear();
             }
             static_box sb;
@@ -91,13 +92,13 @@ void StaticBoxManager::update(
 
         sb.missed_frames++;
 
-        if (sb.missed_frames <= cfg_.max_missed_frames) {
+        if (sb.missed_frames <= cfg_.MAX_MISSED_FRAMES) {
             sb.state = static_box_state::lost;
             sb.confidence = std::max(0.0f, sb.confidence - 0.05f);
             continue;
         }
 
-        if (cfg_.auto_rebind) {
+        if (cfg_.AUTO_REBIND) {
             cv::Point2f reference_dir(0.0f, 0.0f);
             bool has_reference_dir = false;
             auto parent_history = trajectories_.find(sb.last_dynamic_id);
@@ -132,7 +133,6 @@ int StaticBoxManager::find_nearest_with_direction(
         const cv::Point2f &reference_dir,
         bool has_reference_dir
 ) const {
-    constexpr float kNearbyDistanceEpsilon = 10.0f;
     int best = -1;
     int best_dir = -1;
     float best_dist = std::numeric_limits<float>::max();
@@ -160,24 +160,24 @@ int StaticBoxManager::find_nearest_with_direction(
             }
         }
 
-        if (d + kNearbyDistanceEpsilon < best_dist) {
+        if (d + cfg_.NEARBY_DISTANCE_EPSILON < best_dist) {
             best_dist = d;
             best = static_cast<int>(i);
             best_dir_score = dir_score;
             best_dir = -1;
             best_dir_score_qualified = -1.0f;
-            if (dir_score >= kDirectionSimilarityThreshold) {
+            if (dir_score >= cfg_.DIRECTION_SIMILARITY_THRESHOLD) {
                 best_dir = static_cast<int>(i);
                 best_dir_score_qualified = dir_score;
             }
             continue;
         }
 
-        if (std::abs(d - best_dist) <= kNearbyDistanceEpsilon) {
+        if (std::abs(d - best_dist) <= cfg_.NEARBY_DISTANCE_EPSILON) {
             if (dir_score > best_dir_score) {
                 best_dir_score = dir_score;
             }
-            if (dir_score >= kDirectionSimilarityThreshold) {
+            if (dir_score >= cfg_.DIRECTION_SIMILARITY_THRESHOLD) {
                 if (best_dir == -1 || dir_score > best_dir_score_qualified) {
                     best_dir = static_cast<int>(i);
                     best_dir_score_qualified = dir_score;
@@ -196,15 +196,20 @@ bool StaticBoxManager::load_static_rebind_config(const toml::table &tbl) {
         if (!static_rebind) {
             throw std::runtime_error("missing [static_rebind] table");
         }
-        cfg_.auto_rebind = read_required<bool>(*static_rebind, "auto_rebind"); //TODO
-        cfg_.parent_iou_th = read_required<float>(*static_rebind, "parent_iou_th");
-        cfg_.reattach_score_th = read_required<float>(*static_rebind, "reattach_score_th");
+        cfg_.AUTO_REBIND = read_required<bool>(*static_rebind, "AUTO_REBIND");
+        cfg_.MAX_STATIC_BOXES = read_required<int>(*static_rebind, "MAX_STATIC_BOXES");
+        cfg_.TRAJECTORY_HISTORY_SIZE = read_required<int>(*static_rebind, "TRAJECTORY_HISTORY_SIZE");
+        cfg_.DIRECTION_SIMILARITY_THRESHOLD = read_required<float>(*static_rebind, "DIRECTION_SIMILARITY_THRESHOLD");
+        cfg_.NEARBY_DISTANCE_EPSILON = read_required<float>(*static_rebind, "NEARBY_DISTANCE_EPSILON");
 
         const auto *tracker = tbl["tracker"].as_table();
         if (!tracker) {
             throw std::runtime_error("missing [tracker] table");
         }
-        cfg_.max_missed_frames = read_required<int>(*tracker, "max_missed_frames");
+        cfg_.MAX_MISSED_FRAMES = read_required<int>(*tracker, "MAX_MISSED_FRAMES");
+        cfg_.MAX_STATIC_BOXES = std::max(1, cfg_.MAX_STATIC_BOXES);
+        cfg_.TRAJECTORY_HISTORY_SIZE = std::max(1, cfg_.TRAJECTORY_HISTORY_SIZE);
+        cfg_.NEARBY_DISTANCE_EPSILON = std::max(0.0f, cfg_.NEARBY_DISTANCE_EPSILON);
         return true;
 
     } catch (const std::exception &e) {

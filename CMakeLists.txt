@@ -8,7 +8,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0)
 
 find_package(OpenCV REQUIRED)
-find_library(RKNNRT_LIB rknnrt
+#[[find_library(RKNNRT_LIB rknnrt
         PATHS
         /usr/lib
         /usr/lib/aarch64-linux-gnu
@@ -26,7 +26,7 @@ find_path(RKNN_INCLUDE_DIR rknn_api.h
 )
 if (NOT RKNN_INCLUDE_DIR)
     message(FATAL_ERROR "rknn_api.h not found. Install RKNN headers and/or set RKNN_INCLUDE_DIR.")
-endif ()
+endif ()]]
 
 set(FIVE_THREADS_SOURCES
         src/automatic_motion_detector.cpp
@@ -38,7 +38,7 @@ set(FIVE_THREADS_SOURCES
         src/manual_motion_detector.cpp
         src/overlay.cpp
         src/rtsp_worker.cpp
-        src/rtsp_watch_dog.cpp
+#        src/rtsp_watch_dog.cpp
         src/static_box_manager.cpp
         src/static_target_manager.cpp
         src/tracker_manager.cpp
@@ -59,6 +59,7 @@ configure_file(${CMAKE_SOURCE_DIR}/rebind_smoothing.toml ${CMAKE_BINARY_DIR}/reb
 configure_file(${CMAKE_SOURCE_DIR}/rtsp.toml ${CMAKE_BINARY_DIR}/rtsp.toml COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/static_detector.toml ${CMAKE_BINARY_DIR}/static_detector.toml COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/trackers.toml ${CMAKE_BINARY_DIR}/trackers.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/display.toml ${CMAKE_BINARY_DIR}/display.toml COPYONLY)
 
 if (EXISTS "${CMAKE_SOURCE_DIR}/models")
     file(COPY "${CMAKE_SOURCE_DIR}/models" DESTINATION "${CMAKE_BINARY_DIR}")

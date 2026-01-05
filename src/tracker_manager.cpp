@@ -16,16 +16,16 @@ bool TrackerManager::load_tracker_config(const toml::table& tbl) {
         if (!tracker) {
             throw std::runtime_error("missing [tracker] table");
         }
-        cfg_.iou_threshold = read_required<float>(*tracker, "iou_th");
-        cfg_.max_missed_frames = read_required<int>(*tracker, "max_missed_frames");
-        cfg_.max_targets = read_required<int>(*tracker, "max_targets");
-        cfg_.leading_only = read_required<bool>(*tracker, "leading_only");
-        cfg_.leading_min_speed = read_required<float>(*tracker, "leading_min_speed");
-        std::cout << "[TRK] config: iou_th=" << cfg_.iou_threshold
-                  << " max_missed=" << cfg_.max_missed_frames
-                  << " max_targets=" << cfg_.max_targets
-                  << " leading_only=" << (cfg_.leading_only ? "true" : "false")
-                  << " leading_min_speed=" << cfg_.leading_min_speed
+        cfg_.IOU_THRESHOLD = read_required<float>(*tracker, "IOU_THRESHOLD");
+        cfg_.MAX_MISSED_FRAMES = read_required<int>(*tracker, "MAX_MISSED_FRAMES");
+        cfg_.MAX_TARGETS = read_required<int>(*tracker, "MAX_TARGETS");
+        cfg_.LEADING_ONLY = read_required<bool>(*tracker, "LEADING_ONLY");
+        cfg_.LEADING_MIN_SPEED = read_required<float>(*tracker, "LEADING_MIN_SPEED");
+        std::cout << "[TRK] config: IOU_THRESHOLD=" << cfg_.IOU_THRESHOLD
+                  << " MAX_MISSED_FRAMES=" << cfg_.MAX_MISSED_FRAMES
+                  << " MAX_TARGETS=" << cfg_.MAX_TARGETS
+                  << " LEADING_ONLY=" << (cfg_.LEADING_ONLY ? "true" : "false")
+                  << " LEADING_MIN_SPEED=" << cfg_.LEADING_MIN_SPEED
                   << std::endl;
         return true;
 
@@ -76,7 +76,7 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
             if (v > best) { best = v; best_di = (int)di; }
         }
 
-        if (best_di != -1 && best >= cfg_.iou_threshold) {
+        if (best_di != -1 && best >= cfg_.IOU_THRESHOLD) {
             tr.bbox = detections[(size_t)best_di];
             tr.missed = 0;
             det_used[(size_t)best_di] = 1;
@@ -96,7 +96,7 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
 
     for (size_t di = 0; di < detections.size(); ++di) {
         if (det_used[di]) continue;
-        if ((int)tracks_.size() >= cfg_.max_targets) break;
+        if ((int)tracks_.size() >= cfg_.MAX_TARGETS) break;
 
         Track t;
         t.id = next_id_++;
@@ -110,18 +110,18 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
     }
 
     tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
-                                 [&](const Track& t){ return t.missed > cfg_.max_missed_frames; }),
+                                 [&](const Track& t){ return t.missed > cfg_.MAX_MISSED_FRAMES; }),
                   tracks_.end());
     std::cout << "[TRK] tracks_after_prune=" << tracks_.size() << std::endl;
 
-    if (cfg_.leading_only && !tracks_.empty()) {
+    if (cfg_.LEADING_ONLY && !tracks_.empty()) {
         cv::Point2f dir_sum(0.0f, 0.0f);
         float weight_sum = 0.0f;
         for (const auto& tr : tracks_) {
             if (tr.missed > 0) continue;
             float speed = std::sqrt(tr.velocity.x * tr.velocity.x +
                                     tr.velocity.y * tr.velocity.y);
-            if (speed < cfg_.leading_min_speed) continue;
+            if (speed < cfg_.LEADING_MIN_SPEED) continue;
             cv::Point2f dir = tr.velocity * (1.0f / speed);
             dir_sum += dir * speed;
             weight_sum += speed;
@@ -182,7 +182,7 @@ std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detect
     }
 
     targets_.clear();
-    if (cfg_.leading_only && leading_id_ >= 0) {
+    if (cfg_.LEADING_ONLY && leading_id_ >= 0) {
         targets_.reserve(1);
         for (const auto& tr : tracks_) {
             if (tr.id != leading_id_) continue;

@@ -1,5 +1,5 @@
 #include "overlay.h"
-//#include <algorithm>
+#include <algorithm>
 #include <opencv2/opencv.hpp>
 #include <cmath>
 #include <deque>
@@ -13,12 +13,8 @@
 // ВАЖНО:
 //  - Это влияет ТОЛЬКО на отображение (рендер).
 //  - Логика трекера/детектора не меняется.
-//  - Для каждого динамического Target.id хранится своя история.
+//  - Для каждого динамического Target.id хранится свя история.
 //==============================================================================
-
-// Количество последних кадров, используемых для сглаживания.
-// Чем больше окно, тем плавнее, но и больше визуальная задержка.
-static constexpr int DYN_SMOOTH_WINDOW = 15;
 
 // Состояние сглаживания для одного объекта:
 // history хранит несколько последних прямоугольников в float-точности.
@@ -33,7 +29,7 @@ static std::unordered_map<int, smooth_rect_state> g_dyn_smooth;
 //------------------------------------------------------------------------------
 // Сглаживание bbox для отображения (скользящее среднее по последним N кадрам)
 //------------------------------------------------------------------------------
-static cv::Rect smooth_bbox_for_render(int id, const cv::Rect& current) {
+static cv::Rect smooth_bbox_for_render(int id, const cv::Rect& current, int window_size) {
     // Достаём (или создаём) историю для данного id.
     auto& st = g_dyn_smooth[id];
 
@@ -41,7 +37,8 @@ static cv::Rect smooth_bbox_for_render(int id, const cv::Rect& current) {
     st.history.emplace_back(cv::Rect2f(current));
 
     // Поддерживаем ограничение на длину истории.
-    if ((int)st.history.size() > DYN_SMOOTH_WINDOW)
+    const int history_window = std::max(1, window_size);
+    if ((int)st.history.size() > history_window)
         st.history.pop_front();
 
     // Считаем среднее значение по всем bbox в истории.
@@ -226,11 +223,11 @@ void OverlayRenderer::render(
         const std::vector<Target>& targets,
         int /*selected_id*/
 ) const {
-        constexpr int kTargetingCross = 7;
+    const int targeting_cross = cfg_.TARGETING_CROSS_SIZE;
     // Полупрозрачная полоска HUD (верх кадра), если задана.
-    if (cfg_.hud_alpha > 0.0f) {
+    if (cfg_.HUD_ALPHA > 0.0f) {
         cv::Rect hud(0, 0, frame.cols, 24);
-        draw_rect_alpha(frame, hud, cv::Scalar(0, 0, 0), cfg_.hud_alpha);
+        draw_rect_alpha(frame, hud, cv::Scalar(0, 0, 0), cfg_.HUD_ALPHA);
     }
 
     // Набор id, которые встретились в этом кадре — нужен для очистки истории.
@@ -243,7 +240,7 @@ void OverlayRenderer::render(
         // ВАЖНО:
         // t.bbox — «сырой» bbox от трекера.
         // Для отображения используем сглаженный bbox.
-        const cv::Rect r = smooth_bbox_for_render(t.id, t.bbox);
+        const cv::Rect r = smooth_bbox_for_render(t.id, t.bbox, cfg_.DYNAMIC_BBOX_WINDOW);
 
         // Рисуем динамический bbox:
         // - зелёный при стабильном трекинге
@@ -257,7 +254,7 @@ void OverlayRenderer::render(
         if (t.has_cross) {
             cv::Point center(static_cast<int>(std::round(t.cross_center.x)),
                              static_cast<int>(std::round(t.cross_center.y)));
-            draw_cross(frame, center, kTargetingCross, cv::Scalar(0, 0, 255), 1);
+            draw_cross(frame, center, targeting_cross, cv::Scalar(0, 0, 255), 1);
         }
 
 #ifdef SHOW_DYNAMIC_IDS
@@ -347,16 +344,15 @@ bool OverlayRenderer::load_overlay_config(const toml::table &tbl) {
         if (!overlay) {
             throw std::runtime_error("missing [overlay] table");
         }
-        cfg_.hud_alpha = read_required<float>(*overlay, "hud_alpha");
-        cfg_.unselected_alpha_when_selected = read_required<float>(
-                *overlay, "unselected_alpha_when_selected");
+        cfg_.HUD_ALPHA = read_required<float>(*overlay, "HUD_ALPHA");
+        cfg_.TARGETING_CROSS_SIZE = read_required<int>(*overlay, "TARGETING_CROSS_SIZE");
 
 // -------------------------- [smoothing] ---------------------------
         const auto *smoothing = tbl["smoothing"].as_table();
         if (!smoothing) {
             throw std::runtime_error("missing [smoothing] table");
         }
-        cfg_.dynamic_bbox_window = read_required<int>(*smoothing, "dynamic_bbox_window");
+        cfg_.DYNAMIC_BBOX_WINDOW = read_required<int>(*smoothing, "DYNAMIC_BBOX_WINDOW");
         return true;
 
     } catch (const std::exception &e) {

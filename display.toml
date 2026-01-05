@@ -1,0 +1,6 @@
+[display]
+# Ограничение FPS для UI.
+TARGET_FPS = 30
+
+# Имя окна OpenCV.
+WINDOW_NAME = "video"

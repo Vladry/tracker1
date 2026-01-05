@@ -1,6 +1,7 @@
 #pragma once
 #include <opencv2/opencv.hpp>
 #include <atomic>
+#include <string>
 #include "frame_store.h"
 #include "rate_limiter.h"
 
@@ -17,8 +18,8 @@ extern std::atomic<bool> g_rtsp_restart_requested;
 class DisplayLoop {
 public:
     struct Config {
-        int target_fps = 30; // - target_fps: ограничение FPS для UI.
-        std::string window_name = "video"; // - window_name: имя окна OpenCV.
+        int TARGET_FPS = 30; // - TARGET_FPS: ограничение FPS для UI.
+        std::string WINDOW_NAME = "video"; // - WINDOW_NAME: имя окна OpenCV.
     };
 
     // Базовый конструктор — дефолтная конфигурация
@@ -33,6 +34,6 @@ public:
 
 private:
     FrameStore& frames_; // - frames_: источник кадров для отображения.
-    Config cfg_; // - cfg_: параметры окна и частоты обновления.
+    Config cfg_; // - cfg_: параметы окна и частоты обновления.
     RateLimiter limiter_; // - limiter_: ограничитель частоты кадров.
 };

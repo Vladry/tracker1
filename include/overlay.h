@@ -21,9 +21,9 @@
 class OverlayRenderer {
 public:
     struct Config {
-        float hud_alpha = 0.25f; // - hud_alpha: прозрачность HUD.
-        float unselected_alpha_when_selected = 0.3f; // - unselected_alpha_when_selected: прозрачность невыбранных bbox.
-        int dynamic_bbox_window = 5; // - dynamic_bbox_window: окно сглаживания динамических bbox.
+        float HUD_ALPHA = 0.25f; // - HUD_ALPHA: прозрачность HUD.
+        int DYNAMIC_BBOX_WINDOW = 5; // - DYNAMIC_BBOX_WINDOW: окно сглаживания динамических bbox.
+        int TARGETING_CROSS_SIZE = 7; // - TARGETING_CROSS_SIZE: размер красного крестика цели.
     };
 
     // Создаёт рендерер и загружает настройки из TOML.
@@ -54,7 +54,7 @@ private:
     // Загружает параметры оверлея из конфигурации.
     bool load_overlay_config(const toml::table& tbl);
 
-    // Ограничивает прямоугольник границами кадра.
+    // Ограничиват прямоугольник границами кадра.
     static cv::Rect clip_rect(const cv::Rect& r, int w, int h);
 
     // Рисует прямоугольник с альфа-прозрачностью.

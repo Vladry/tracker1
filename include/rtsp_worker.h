@@ -61,29 +61,29 @@ private:
     struct RtspConfig {
         // RTSP URL камеры. Пример:
         // "rtsp://192.168.144.25:8554/main.264" - для камеры SIYI
-        std::string url = "rtsp://192.168.144.25:8554/main.264";
+        std::string URL = "rtsp://192.168.144.25:8554/main.264";
 
         // Протоколы rtspsrc:
         //(битовая маска) 1 = UDP, 4 = TCP
-        int protocols = 1;
+        int PROTOCOLS = 1;
 
         // rtspsrc::latency (мс). 0 = минимальная задержка (но больше риск нестабильности)
-        int latency_ms = 0;
+        int LATENCY_MS = 0;
 
         // rtspsrc::timeout / tcp-timeout (микросекунды).
         // Обычно достаточно 2с, чтобы не висеть бесконечно при старте.
-        uint64_t timeout_us = 2'000'000;
-        uint64_t tcp_timeout_us = 2'000'000;
+        uint64_t TIMEOUT_US = 2'000'000;
+        uint64_t TCP_TIMEOUT_US = 2'000'000;
 
         // Принудительные caps после декодера (capsfilter).
         // На RK (mppvideodec) типичный стабильный формат для OpenCV: NV12.
-        std::string caps_force = "video/x-raw,format=NV12";
+        std::string CAPS_FORCE = "video/x-raw,format=NV12";
 
         // Пауза после stop() перед повторным стартом (мс).
         // Нужна, чтобы камера/стек RTSP успели закрыть сессию и освободить UDP порты.
-        int restart_delay_ms = 300;
+        int RESTART_DELAY_MS = 300;
 
-        bool logger_on = false; // - logger_on: включение подробного логирования RTSP.
+        bool LOGGER_ON = false; // - LOGGER_ON: включение подробного логирования RTSP.
 
     };
 

@@ -14,7 +14,12 @@ public:
     // Назначает детектор движения для поиска кандидатов.
     void configure(const ManualMotionDetector* detector);
     // Обновляет параметры фильтрации автодетектора движения.
-    void configure_motion_filter(int iterations, float diffusion_pixels, float cluster_ratio_threshold);
+    void configure_motion_filter(int iterations,
+                                 float diffusion_pixels,
+                                 float cluster_ratio_threshold,
+                                 int history_size,
+                                 int diff_threshold,
+                                 double min_area);
     // Сбрасывает активный поиск и очищает буферы кадров.
     void reset();
 

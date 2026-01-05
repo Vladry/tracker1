@@ -11,15 +11,6 @@
 
 using namespace std::chrono;
 
-// ============================================================================
-// Внутренняя константа реализации rtsp_worker.
-// Инвариант пайплайна: формат кадра после декодера, ожидаемый OpenCV.
-// Не является конфигурацией.
-// ============================================================================
-namespace {
-    constexpr const char* kDecoderCapsForce = "video/x-raw,format=NV12";
-}
-
 RtspWorker::RtspWorker(FrameStore& store, toml::table& tbl)
         : store_(store) {
     load_rtsp_config(tbl);
@@ -57,8 +48,8 @@ void RtspWorker::stop() {
 void RtspWorker::restart() {
     stop();
 
-    if (cfg_.restart_delay_ms > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(cfg_.restart_delay_ms));
+    if (cfg_.RESTART_DELAY_MS > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(cfg_.RESTART_DELAY_MS));
     }
 
     start();
@@ -74,7 +65,7 @@ void RtspWorker::pokeBus() {
 }
 
 void RtspWorker::threadMain() {
-    if (cfg_.logger_on) {
+    if (cfg_.LOGGER_ON) {
         std::cerr << "RTSP: worker thread started" << std::endl;
         std::cerr.flush();
     }
@@ -82,7 +73,7 @@ void RtspWorker::threadMain() {
     if (!buildPipeline()) {
         state_.store(State::ERROR, std::memory_order_release);
         running_.store(false, std::memory_order_release);
-        if (cfg_.logger_on) {
+        if (cfg_.LOGGER_ON) {
             std::cerr << "RTSP: buildPipeline() failed" << std::endl;
             std::cerr.flush();
         }
@@ -92,7 +83,7 @@ void RtspWorker::threadMain() {
 
     GstStateChangeReturn ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     if (ret == GST_STATE_CHANGE_FAILURE) {
-        if (cfg_.logger_on) {
+        if (cfg_.LOGGER_ON) {
             std::cerr << "RTSP: state change FAILURE on start" << std::endl;
             std::cerr.flush();
         }
@@ -116,7 +107,7 @@ void RtspWorker::threadMain() {
                 gchar* dbg = nullptr;
                 gst_message_parse_error(msg, &err, &dbg);
 
-                if (cfg_.logger_on) {
+                if (cfg_.LOGGER_ON) {
                     std::cerr << "RTSP: GST_MESSAGE_ERROR: "
                               << (err ? err->message : "(null)") << std::endl;
                     if (dbg) std::cerr << "RTSP: debug: " << dbg << std::endl;
@@ -132,7 +123,7 @@ void RtspWorker::threadMain() {
             }
 
             case GST_MESSAGE_EOS:
-                if (cfg_.logger_on) {
+                if (cfg_.LOGGER_ON) {
                     std::cerr << "RTSP: EOS" << std::endl;
                     std::cerr.flush();
                 }
@@ -148,7 +139,7 @@ void RtspWorker::threadMain() {
 
     teardownPipeline();
 
-    if (cfg_.logger_on) {
+    if (cfg_.LOGGER_ON) {
         std::cerr << "RTSP: worker thread stopped" << std::endl;
         std::cerr.flush();
     }
@@ -166,21 +157,21 @@ bool RtspWorker::buildPipeline() {
     sink_       = gst_element_factory_make("appsink", "sink");
 
     if (!pipeline_ || !src_ || !depay_ || !parse_ || !dec_ || !force_caps_ || !sink_) {
-        if (cfg_.logger_on) {
+        if (cfg_.LOGGER_ON) {
             std::cerr << "RTSP: failed to create one or more GStreamer elements" << std::endl;
             std::cerr.flush();
         }
         return false;
     }
 
-    g_object_set(G_OBJECT(src_), "location", cfg_.url.c_str(), nullptr);
-    g_object_set(G_OBJECT(src_), "protocols", cfg_.protocols, nullptr);
-    g_object_set(G_OBJECT(src_), "latency", cfg_.latency_ms, nullptr);
-    g_object_set(G_OBJECT(src_), "timeout", (guint64)cfg_.timeout_us, nullptr);
-    g_object_set(G_OBJECT(src_), "tcp-timeout", (guint64)cfg_.tcp_timeout_us, nullptr);
+    g_object_set(G_OBJECT(src_), "location", cfg_.URL.c_str(), nullptr);
+    g_object_set(G_OBJECT(src_), "protocols", cfg_.PROTOCOLS, nullptr);
+    g_object_set(G_OBJECT(src_), "latency", cfg_.LATENCY_MS, nullptr);
+    g_object_set(G_OBJECT(src_), "timeout", (guint64)cfg_.TIMEOUT_US, nullptr);
+    g_object_set(G_OBJECT(src_), "tcp-timeout", (guint64)cfg_.TCP_TIMEOUT_US, nullptr);
 
     // capsfilter после декодера
-    GstCaps* caps = gst_caps_from_string(kDecoderCapsForce);
+    GstCaps* caps = gst_caps_from_string(cfg_.CAPS_FORCE.c_str());
     g_object_set(G_OBJECT(force_caps_), "caps", caps, nullptr);
     gst_caps_unref(caps);
 
@@ -198,7 +189,7 @@ bool RtspWorker::buildPipeline() {
     gst_bin_add_many(GST_BIN(pipeline_), src_, depay_, parse_, dec_, force_caps_, sink_, nullptr);
 
     if (!gst_element_link_many(depay_, parse_, dec_, force_caps_, sink_, nullptr)) {
-        if (cfg_.logger_on) {
+        if (cfg_.LOGGER_ON) {
             std::cerr << "RTSP: failed to link depay->parse->dec->caps->sink" << std::endl;
             std::cerr.flush();
         }
@@ -269,7 +260,7 @@ GstFlowReturn RtspWorker::onNewSample(GstAppSink* sink, gpointer user_data) {
     gst_sample_unref(sample);
 
     if (!self->gotFirstSample_.exchange(true, std::memory_order_acq_rel)) {
-        if (self->cfg_.logger_on) {
+        if (self->cfg_.LOGGER_ON) {
             std::cerr << "RTSP: first sample received" << std::endl;
             std::cerr.flush();
         }
@@ -303,7 +294,7 @@ void RtspWorker::onPadAdded(GstElement* src, GstPad* new_pad, gpointer user_data
 
     if (!gst_pad_is_linked(sinkpad)) {
         GstPadLinkReturn ret = gst_pad_link(new_pad, sinkpad);
-        if (self->cfg_.logger_on) {
+        if (self->cfg_.LOGGER_ON) {
             std::cerr << "RTSP: [pad-added] link result = " << ret << std::endl;
             std::cerr.flush();
         }
@@ -324,14 +315,16 @@ bool RtspWorker::load_rtsp_config(toml::table &tbl) {
         if (!rtsp) {
             throw std::runtime_error("invalid [rtsp] table");
         }
-        cfg_.url = read_required<std::string>(*rtsp, "url");
-        cfg_.protocols = read_required<int>(*rtsp, "protocols");
-        cfg_.latency_ms = read_required<int>(*rtsp, "latency_ms");
-        cfg_.timeout_us = read_required<std::uint64_t>(*rtsp, "timeout_us");
-        cfg_.tcp_timeout_us = read_required<std::uint64_t>(*rtsp, "tcp_timeout_us");
+        cfg_.URL = read_required<std::string>(*rtsp, "URL");
+        cfg_.PROTOCOLS = read_required<int>(*rtsp, "PROTOCOLS");
+        cfg_.LATENCY_MS = read_required<int>(*rtsp, "LATENCY_MS");
+        cfg_.TIMEOUT_US = read_required<std::uint64_t>(*rtsp, "TIMEOUT_US");
+        cfg_.TCP_TIMEOUT_US = read_required<std::uint64_t>(*rtsp, "TCP_TIMEOUT_US");
+        cfg_.CAPS_FORCE = read_required<std::string>(*rtsp, "CAPS_FORCE");
+        cfg_.RESTART_DELAY_MS = read_required<int>(*rtsp, "RESTART_DELAY_MS");
         LoggingConfig log_cfg{};
         load_logging_config(tbl, log_cfg);
-        cfg_.logger_on = log_cfg.rtsp_level_logger_on;
+        cfg_.LOGGER_ON = log_cfg.RTSP_LEVEL_LOGGER_ON;
 
 
         return true;
