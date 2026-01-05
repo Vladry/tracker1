@@ -82,13 +82,13 @@ VISIBILITY_HISTORY_SIZE = 3
 RESERVED_CANDIDATE_TTL_MS = 1500
 
 # Количество итераций детекции движения.
-MOTION_DETECTION_ITERATIONS = 10
+MOTION_DETECTION_ITERATIONS = 5
 
 # Радиус кластеризации детекций (пиксели).
-MOTION_DETECTION_DIFFUSION_PX = 100
+MOTION_DETECTION_DIFFUSION_PX = 30
 
 # Доля детекций в кластере для принятия (0..1).
-MOTION_DETECTION_CLUSTER_RATIO = 0.9
+MOTION_DETECTION_CLUSTER_RATIO = 0.7
 
 # История кадров для автодетекции движения.
 AUTO_HISTORY_SIZE = 5
@@ -97,7 +97,7 @@ AUTO_HISTORY_SIZE = 5
 AUTO_DIFF_THRESHOLD = 25
 
 # Минимальная площадь контура для автодетекции.
-AUTO_MIN_AREA = 60.0
+AUTO_MIN_AREA = 30.0
 
 # Заливать область flood fill красным с прозрачностью.
 FLOODFILL_FILL_OVERLAY = true
