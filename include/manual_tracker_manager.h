@@ -81,6 +81,7 @@ private:
     struct ReservedCandidate {
         cv::Rect2f bbox; // - bbox: зарезервированный bbox кандидата.
         long long expires_ms = 0; // - expires_ms: время истечения резерва.
+        int owner_id = -1; // - owner_id: id трека, которому назначен кандидат.
     };
 
     Config cfg_; // - cfg_: текущие настройки ручного трекера.

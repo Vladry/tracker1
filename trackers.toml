@@ -9,6 +9,12 @@ MAX_MISSED_FRAMES = 30
 MAX_TARGETS = 10
 
 # Оставлять только ведущую цель.
+#При LEADING_ONLY=true менеджер пытается выбрать “ведущую” цель:
+#сначала вычисляет общее направление движения активных треков с учётом LEADING_MIN_SPEED,
+#затем выбирает цель с максимальной проекцией центра на это направление,
+#если направление не удалось посчитать — выбирает крупнейший bbox по площади,
+#и в конце формирует targets_ либо из одной ведущей цели, либо из всех, если leading_id_ так и не выбран.
+#Если ведущая цель не определяется (нет движения/все missed > 0 и т.п.), то даже при LEADING_ONLY=true будет возвращён список всех целей — визуально разницы не будет.
 LEADING_ONLY = false
 
 # Минимальная скорость для учёта направления.
@@ -37,7 +43,7 @@ MOTION_ANGLE_TOLERANCE_DEG = 20.0
 TRACKER_INIT_PADDING = 2
 
 # Минимальный размер bbox для инициализации трекера.
-TRACKER_MIN_SIZE = 14
+TRACKER_MIN_SIZE = 20
 
 # Минимальная амплитуда движения (пиксели) для отбора точек.
 MOTION_MIN_MAGNITUDE = 0.2
@@ -82,28 +88,28 @@ VISIBILITY_HISTORY_SIZE = 3
 RESERVED_CANDIDATE_TTL_MS = 1500
 
 # Количество итераций детекции движения.
-MOTION_DETECTION_ITERATIONS = 5
+MOTION_DETECTION_ITERATIONS = 3
 
 # Радиус кластеризации детекций (пиксели).
-MOTION_DETECTION_DIFFUSION_PX = 30
+MOTION_DETECTION_DIFFUSION_PX = 20
 
 # Доля детекций в кластере для принятия (0..1).
 MOTION_DETECTION_CLUSTER_RATIO = 0.7
 
 # История кадров для автодетекции движения.
-AUTO_HISTORY_SIZE = 5
+AUTO_HISTORY_SIZE = 3
 
 # Порог бинаризации diff для автодетекции.
-AUTO_DIFF_THRESHOLD = 25
+AUTO_DIFF_THRESHOLD = 15
 
 # Минимальная площадь контура для автодетекции.
-AUTO_MIN_AREA = 30.0
+AUTO_MIN_AREA = 60.0
 
 # Заливать область flood fill красным с прозрачностью.
 FLOODFILL_FILL_OVERLAY = true
 
 # Прозрачность заливки flood fill.
-FLOODFILL_OVERLAY_ALPHA = 0.7
+FLOODFILL_OVERLAY_ALPHA = 0.5
 
 # Через сколько секунд убрать красную область выделенного объекта.
 OVERLAY_TTL_SECONDS = 1

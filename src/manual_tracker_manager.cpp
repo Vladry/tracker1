@@ -339,12 +339,6 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                            }),
             reserved_candidates_.end());
 
-    std::vector<cv::Rect2f> reserved_boxes = tracked_boxes;
-    reserved_boxes.reserve(tracked_boxes.size() + reserved_candidates_.size());
-    for (const auto& candidate : reserved_candidates_) {
-        reserved_boxes.push_back(candidate.bbox);
-    }
-
     if (!pending_clicks_.empty()) {
         cv::Mat gray = current_gray;
         // Цикл: дополняет историю кадров для pending-кликов и, при готовности,
@@ -438,6 +432,14 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 
     // Цикл: обновляет все активные треки (OpenCV-трекер, потери, автопоиск кандидатов).
     for (auto it = tracks_.begin(); it != tracks_.end(); ) {
+        std::vector<cv::Rect2f> reserved_boxes = tracked_boxes;
+        reserved_boxes.reserve(tracked_boxes.size() + reserved_candidates_.size());
+        for (const auto& candidate : reserved_candidates_) {
+            if (candidate.owner_id == it->id) {
+                continue;
+            }
+            reserved_boxes.push_back(candidate.bbox);
+        }
         it->candidate_search.set_tracked_boxes(reserved_boxes);
         bool visible = false;
         const cv::Rect2f prev_bbox = it->bbox;
@@ -484,8 +486,9 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                     std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
                 }
                 it->bbox = candidate_bbox;
-                reserved_candidates_.push_back({candidate_bbox, now_ms + cfg_.RESERVED_CANDIDATE_TTL_MS});
-                reserved_boxes.push_back(candidate_bbox);
+                reserved_candidates_.push_back({candidate_bbox,
+                                                now_ms + cfg_.RESERVED_CANDIDATE_TTL_MS,
+                                                it->id});
                 it->cross_center = rect_center(it->bbox);
                 it->tracker = create_tracker();
                 it->tracker->init(frame, it->bbox);
