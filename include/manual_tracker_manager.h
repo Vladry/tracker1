@@ -67,11 +67,17 @@ private:
         std::vector<cv::Mat> gray_frames; // - gray_frames: последовательность кадров для анализа движения.
     };
 
+    struct ReservedCandidate {
+        cv::Rect2f bbox; // - bbox: зарезервированный bbox кандидата.
+        long long expires_ms = 0; // - expires_ms: время истечения резерва.
+    };
+
     Config cfg_; // - cfg_: текущие настройки ручного трекера.
     LoggingConfig log_cfg_; // - log_cfg_: настройки логирования.
     std::vector<ManualTrack> tracks_; // - tracks_: список активных треков.
     std::vector<Target> targets_; // - targets_: список целей для выдачи наружу.
     std::vector<PendingClick> pending_clicks_; // - pending_clicks_: клики, ожидающие подтверждения движения.
+    std::vector<ReservedCandidate> reserved_candidates_; // - reserved_candidates_: временные резервы кандидатов.
     int next_id_ = 1; // - next_id_: счётчик id целей.
     std::mutex mutex_; // - mutex_: защита данных от конкурентного доступа.
     cv::Mat flood_fill_overlay_; // - flood_fill_overlay_: визуальный оверлей зоны движения.

@@ -50,6 +50,7 @@ namespace {
     // Размер кольцевого буфера видимости: три кадра для определения потери цели.
     constexpr size_t kVisibilityHistorySize = 3;
     constexpr float kWatchdogAngleTolDeg = 20.0f;
+    constexpr long long kReservedCandidateTtlMs = 1500;
 }
 
 // Конструктор: поднимает логирование и загружает настройки ручного трекера.
@@ -293,9 +294,23 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 
     std::vector<cv::Rect2f> tracked_boxes;
     tracked_boxes.reserve(tracks_.size());
-    // Цикл: собирает bbox всех активных треков для фильтрации кандидатов автопоиска.
+    // Цикл: собирает bbox видимых треков для фильтрации кандидатов автопоиска.
     for (const auto& track : tracks_) {
-        tracked_boxes.push_back(track.bbox);
+        if (track.lost_since_ms == 0) {
+            tracked_boxes.push_back(track.bbox);
+        }
+    }
+    reserved_candidates_.erase(
+            std::remove_if(reserved_candidates_.begin(), reserved_candidates_.end(),
+                           [&](const ReservedCandidate& candidate) {
+                               return candidate.expires_ms <= now_ms;
+                           }),
+            reserved_candidates_.end());
+
+    std::vector<cv::Rect2f> reserved_boxes = tracked_boxes;
+    reserved_boxes.reserve(tracked_boxes.size() + reserved_candidates_.size());
+    for (const auto& candidate : reserved_candidates_) {
+        reserved_boxes.push_back(candidate.bbox);
     }
 
     if (!pending_clicks_.empty()) {
@@ -354,7 +369,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                         cv::convexHull(motion_points, hull, true);
                         std::vector<cv::Point> hull_int;
                         hull_int.reserve(hull.size());
-                        // Цикл: переводит точки hull в целочисленные координаты маски заливки.
+                        // Цикл: переводит точки hull в целочисленные координаты маски заливк.
                         for (const auto& pt : hull) {
                             hull_int.emplace_back(static_cast<int>(std::round(pt.x)),
                                                   static_cast<int>(std::round(pt.y)));
@@ -388,7 +403,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 
     // Цикл: обновляет все активные треки (OpenCV-трекер, потери, автопоиск кандидатов).
     for (auto it = tracks_.begin(); it != tracks_.end(); ) {
-        it->candidate_search.set_tracked_boxes(tracked_boxes);
+        it->candidate_search.set_tracked_boxes(reserved_boxes);
         bool visible = false;
         const cv::Rect2f prev_bbox = it->bbox;
         if (it->lost_since_ms == 0 && !frame.empty() && it->tracker) {
@@ -434,6 +449,8 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                     std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
                 }
                 it->bbox = candidate_bbox;
+                reserved_candidates_.push_back({candidate_bbox, now_ms + kReservedCandidateTtlMs});
+                reserved_boxes.push_back(candidate_bbox);
                 it->cross_center = rect_center(it->bbox);
                 it->tracker = create_tracker();
                 it->tracker->init(frame, it->bbox);

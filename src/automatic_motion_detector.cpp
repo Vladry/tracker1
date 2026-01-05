@@ -119,6 +119,19 @@ std::vector<cv::Point2f> AutomaticMotionDetector::detect_by_motion(const cv::Mat
         points.push_back(rect_center(rect));
     }
 
+    if (!tracked_boxes_.empty() && !points.empty()) {
+        points.erase(std::remove_if(points.begin(), points.end(),
+                                    [&](const cv::Point2f& point) {
+                                        for (const auto& rect : tracked_boxes_) {
+                                            if (rect.contains(point)) {
+                                                return true;
+                                            }
+                                        }
+                                        return false;
+                                    }),
+                     points.end());
+    }
+
     return points;
 }
 
