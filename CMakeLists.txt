@@ -29,6 +29,7 @@ if (NOT RKNN_INCLUDE_DIR)
 endif ()]]
 
 set(FIVE_THREADS_SOURCES
+        src/auto_detection_provider.cpp
         src/automatic_motion_detector.cpp
         src/display_loop.cpp
         src/auto_candidate_search.cpp
@@ -38,12 +39,14 @@ set(FIVE_THREADS_SOURCES
         src/manual_motion_detector.cpp
         src/overlay.cpp
         src/rtsp_worker.cpp
-#        src/rtsp_watch_dog.cpp
+        #        src/rtsp_watch_dog.cpp
         src/static_box_manager.cpp
         src/static_target_manager.cpp
         src/tracker_manager.cpp
         include/automatic_motion_detector.h
         src/automatic_motion_detector.cpp
+        include/auto_detection_provider.h
+        src/auto_detection_provider.cpp
 )
 
 add_executable(Five_Threads ${FIVE_THREADS_SOURCES})
@@ -51,7 +54,7 @@ add_executable(Five_Threads ${FIVE_THREADS_SOURCES})
 target_sources(Five_Threads PRIVATE ${FIVE_THREADS_SOURCES})
 target_sources(Five_Threads PRIVATE src/overlay.cpp)
 
-configure_file(${CMAKE_SOURCE_DIR}/RKNN.toml ${CMAKE_BINARY_DIR}/RKNN.toml COPYONLY)
+#configure_file(${CMAKE_SOURCE_DIR}/RKNN.toml ${CMAKE_BINARY_DIR}/RKNN.toml COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/logging.toml ${CMAKE_BINARY_DIR}/logging.toml COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/motion_detector.toml ${CMAKE_BINARY_DIR}/motion_detector.toml COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/overlay.toml ${CMAKE_BINARY_DIR}/overlay.toml COPYONLY)

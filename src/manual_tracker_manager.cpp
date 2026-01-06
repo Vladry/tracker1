@@ -74,6 +74,13 @@ ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {
     motion_cfg.MIN_WIDTH = cfg_.MIN_WIDTH;
     motion_cfg.MIN_HEIGHT = cfg_.MIN_HEIGHT;
     motion_detector_.update_config(motion_cfg);
+    detection_provider_.set_detection_params(cfg_.MOTION_DETECTION_ITERATIONS,
+                                             cfg_.MOTION_DETECTION_DIFFUSION_PX,
+                                             cfg_.MOTION_DETECTION_CLUSTER_RATIO);
+    detection_provider_.set_motion_params(cfg_.AUTO_HISTORY_SIZE,
+                                          cfg_.AUTO_DIFF_THRESHOLD,
+                                          cfg_.AUTO_MIN_AREA);
+    detection_provider_.set_update_period_ms(cfg_.AUTO_DETECTION_PERIOD_MS);
 }
 
 // Загружает параметры ручного трекера из TOML и печатает краткую сводку.
@@ -107,6 +114,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.WATCHDOG_ANGLE_TOLERANCE_DEG = read_required<float>(*cfg, "WATCHDOG_ANGLE_TOLERANCE_DEG");
         cfg_.VISIBILITY_HISTORY_SIZE = read_required<int>(*cfg, "VISIBILITY_HISTORY_SIZE");
         cfg_.RESERVED_CANDIDATE_TTL_MS = read_required<int>(*cfg, "RESERVED_CANDIDATE_TTL_MS");
+        cfg_.AUTO_DETECTION_PERIOD_MS = read_required<int>(*cfg, "AUTO_DETECTION_PERIOD_MS");
         cfg_.MOTION_DETECTION_ITERATIONS = read_required<int>(*cfg, "MOTION_DETECTION_ITERATIONS");
         cfg_.MOTION_DETECTION_DIFFUSION_PX = read_required<float>(*cfg, "MOTION_DETECTION_DIFFUSION_PX");
         cfg_.MOTION_DETECTION_CLUSTER_RATIO = read_required<float>(*cfg, "MOTION_DETECTION_CLUSTER_RATIO");
@@ -121,6 +129,7 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
         cfg_.TRACKER_TYPE = read_required<std::string>(*cfg, "TRACKER_TYPE");
         cfg_.VISIBILITY_HISTORY_SIZE = std::max(1, cfg_.VISIBILITY_HISTORY_SIZE);
         cfg_.RESERVED_CANDIDATE_TTL_MS = std::max(0, cfg_.RESERVED_CANDIDATE_TTL_MS);
+        cfg_.AUTO_DETECTION_PERIOD_MS = std::max(1, cfg_.AUTO_DETECTION_PERIOD_MS);
         return true;
     } catch (const std::exception& e) {
         std::cerr << "[MANUAL] config load failed: " << e.what() << std::endl;
@@ -320,6 +329,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         return;
     }
 
+    detection_provider_.update(frame, now_ms);
     cv::Mat current_gray = to_gray(frame);
     const bool should_run_watchdog = !watchdog_prev_gray_.empty()
                                      && (now_ms - watchdog_prev_ms_ >= cfg_.WATCHDOG_PERIOD_MS);
@@ -377,7 +387,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                                      ? rect_center(motion_roi)
                                      : rect_center(track.bbox);
                 track.last_known_center = track.cross_center;
-                track.candidate_search.configure(&motion_detector_);
+                track.candidate_search.configure(&motion_detector_, &detection_provider_);
                 track.candidate_search.configure_motion_filter(
                         cfg_.MOTION_DETECTION_ITERATIONS,
                         cfg_.MOTION_DETECTION_DIFFUSION_PX,
@@ -441,6 +451,15 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             reserved_boxes.push_back(candidate.bbox);
         }
         it->candidate_search.set_tracked_boxes(reserved_boxes);
+        std::vector<cv::Point2f> reserved_points;
+        reserved_points.reserve(reserved_candidates_.size());
+        for (const auto& candidate : reserved_candidates_) {
+            if (candidate.owner_id == it->id) {
+                continue;
+            }
+            reserved_points.push_back(rect_center(candidate.bbox));
+        }
+        it->candidate_search.set_reserved_detection_points(reserved_points);
         bool visible = false;
         const cv::Rect2f prev_bbox = it->bbox;
         if (it->lost_since_ms == 0 && !frame.empty() && it->tracker) {

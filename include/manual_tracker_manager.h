@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "auto_candidate_search.h"
+#include "auto_detection_provider.h"
 #include "config.h"
 #include "manual_motion_detector.h"
 #include "target.h"
@@ -36,6 +37,7 @@ public:
         float WATCHDOG_ANGLE_TOLERANCE_DEG = 20.0f; // - WATCHDOG_ANGLE_TOLERANCE_DEG: допуск угла движения (градусы).
         int VISIBILITY_HISTORY_SIZE = 3; // - VISIBILITY_HISTORY_SIZE: размер буфера видимости для фильтра потери.
         int RESERVED_CANDIDATE_TTL_MS = 1500; // - RESERVED_CANDIDATE_TTL_MS: TTL резерва кандидатов (мс).
+        int AUTO_DETECTION_PERIOD_MS = 100; // - AUTO_DETECTION_PERIOD_MS: период обновления автодетекции (мс).
         int MOTION_DETECTION_ITERATIONS = 10; // - MOTION_DETECTION_ITERATIONS: число итераций детекции движения.
         float MOTION_DETECTION_DIFFUSION_PX = 100.0f; // - MOTION_DETECTION_DIFFUSION_PX: радиус кластеризации детекций.
         float MOTION_DETECTION_CLUSTER_RATIO = 0.9f; // - MOTION_DETECTION_CLUSTER_RATIO: доля детекций в кластере.
@@ -98,6 +100,7 @@ private:
     cv::Mat watchdog_prev_gray_; // - watchdog_prev_gray_: кадр для контроля группового движения.
     long long watchdog_prev_ms_ = 0; // - watchdog_prev_ms_: время предыдущей проверки движения.
     ManualMotionDetector motion_detector_; // - motion_detector_: детектор движения в ROI клика.
+    AutoDetectionProvider detection_provider_; // - detection_provider_: фоновые детекции движения.
 
     // Загружает параметры ручного трекера из TOML.
     bool load_config(const toml::table& tbl);

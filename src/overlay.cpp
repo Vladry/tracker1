@@ -230,6 +230,15 @@ void OverlayRenderer::render(
         draw_rect_alpha(frame, hud, cv::Scalar(0, 0, 0), cfg_.HUD_ALPHA);
     }
 
+    {
+        const std::string text = "Tracks: " + std::to_string(targets.size());
+        int baseline = 0;
+        const cv::Size ts = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
+        const int padding = 20;
+        cv::Point org(frame.cols - padding - ts.width, padding + ts.height);
+        draw_label(frame, org, text, cv::Scalar(255, 255, 255));
+    }
+
     // Набор id, которые встретились в этом кадре — нужен для очистки истории.
     std::unordered_set<int> seen_ids;
     seen_ids.reserve(targets.size());
@@ -299,7 +308,7 @@ void OverlayRenderer::render_static_boxes(
                 break;
             case static_box_state::lost:
             default:
-                // Потерянный или неизвестный статус.
+                // Поерянный или неизвестный статус.
                 color = cv::Scalar(128, 128, 128);  // gray
                 break;
         }

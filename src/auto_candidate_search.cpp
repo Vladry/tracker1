@@ -14,10 +14,18 @@ namespace {
     }
 }
 
+AutoCandidateSearch::AutoCandidateSearch(const ManualMotionDetector* detector,
+                                         AutoDetectionProvider* detection_provider) {
+    configure(detector, detection_provider);
+}
+
 // Назначает детектор движения, который будет использоваться для поиска кандидатов.
-void AutoCandidateSearch::configure(const ManualMotionDetector* detector) {
+void AutoCandidateSearch::configure(const ManualMotionDetector* detector,
+                                    AutoDetectionProvider* detection_provider) {
     detector_ = detector;
+    detection_provider_ = detection_provider;
     automatic_detector_.set_detector(detector);
+    automatic_detector_.set_detection_provider(detection_provider_);
 }
 
 void AutoCandidateSearch::configure_motion_filter(int iterations,
@@ -26,6 +34,9 @@ void AutoCandidateSearch::configure_motion_filter(int iterations,
                                                   int history_size,
                                                   int diff_threshold,
                                                   double min_area) {
+    if (!detection_provider_) {
+        return;
+    }
     automatic_detector_.set_detection_params(iterations, diffusion_pixels, cluster_ratio_threshold);
     automatic_detector_.set_motion_params(history_size, diff_threshold, min_area);
 }
@@ -47,6 +58,10 @@ void AutoCandidateSearch::set_tracked_boxes(const std::vector<cv::Rect2f>& track
     automatic_detector_.set_tracked_boxes(tracked_boxes_);
 }
 
+void AutoCandidateSearch::set_reserved_detection_points(const std::vector<cv::Point2f>& reserved_points) {
+    automatic_detector_.set_reserved_detection_points(reserved_points);
+}
+
 // Инициализирует поиск вокруг последней позиции цели и сохраняет базовый кадр.
 // Запуск выполняется один раз, повторные вызовы только поддерживают тайминг.
 void AutoCandidateSearch::start(const cv::Point2f& last_pos, long long now_ms, const cv::Mat& frame) {
@@ -66,7 +81,7 @@ void AutoCandidateSearch::start(const cv::Point2f& last_pos, long long now_ms, c
     cv::Point2f best_point;
     int roi_x = cx;
     int roi_y = cy;
-    if (automatic_detector_.find_best_candidate(frame, cx, cy, best_point)) {
+    if (automatic_detector_.find_best_candidate(cx, cy, best_point)) {
         roi_x = static_cast<int>(std::round(best_point.x));
         roi_y = static_cast<int>(std::round(best_point.y));
         best_candidate_selected_ = true;
@@ -92,7 +107,7 @@ bool AutoCandidateSearch::update(const cv::Mat& frame, cv::Rect2f& out_bbox) {
         const int cx = static_cast<int>(std::round(last_pos_.x));
         const int cy = static_cast<int>(std::round(last_pos_.y));
         cv::Point2f best_point;
-        if (automatic_detector_.find_best_candidate(frame, cx, cy, best_point)) {
+        if (automatic_detector_.find_best_candidate(cx, cy, best_point)) {
             const int roi_x = static_cast<int>(std::round(best_point.x));
             const int roi_y = static_cast<int>(std::round(best_point.y));
             cv::Rect new_roi = detector_->make_click_roi(frame, roi_x, roi_y);

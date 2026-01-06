@@ -73,7 +73,7 @@ MOTION_GRID_STEP_RATIO = 0.1
 MOTION_MIN_STABLE_RATIO = 0.1
 
 # Период проверки группового движения для сторожевого фильтра.
-WATCHDOG_PERIOD_MS = 500
+WATCHDOG_PERIOD_MS = 100
 
 # Доля площади ROI с едино-направленным движением (0..1).
 WATCHDOG_MOTION_RATIO = 0.8
@@ -86,6 +86,9 @@ VISIBILITY_HISTORY_SIZE = 3
 
 # TTL резерва кандидатов (мс).
 RESERVED_CANDIDATE_TTL_MS = 1500
+
+# Период обновления фоновой автодетекции (мс).
+AUTO_DETECTION_PERIOD_MS = 100
 
 # Количество итераций детекции движения.
 MOTION_DETECTION_ITERATIONS = 3
