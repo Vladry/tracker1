@@ -73,7 +73,7 @@ MOTION_GRID_STEP_RATIO = 0.1
 MOTION_MIN_STABLE_RATIO = 0.1
 
 # Период проверки группового движения для сторожевого фильтра.
-WATCHDOG_PERIOD_MS = 100
+WATCHDOG_PERIOD_MS = 500
 
 # Доля площади ROI с едино-направленным движением (0..1).
 WATCHDOG_MOTION_RATIO = 0.8

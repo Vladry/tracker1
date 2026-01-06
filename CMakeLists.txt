@@ -44,17 +44,13 @@ set(FIVE_THREADS_SOURCES
         src/static_target_manager.cpp
         src/tracker_manager.cpp
         include/automatic_motion_detector.h
-        src/automatic_motion_detector.cpp
-        include/auto_detection_provider.h
-        src/auto_detection_provider.cpp
 )
 
 add_executable(Five_Threads ${FIVE_THREADS_SOURCES})
 
 target_sources(Five_Threads PRIVATE ${FIVE_THREADS_SOURCES})
-target_sources(Five_Threads PRIVATE src/overlay.cpp)
 
-#configure_file(${CMAKE_SOURCE_DIR}/RKNN.toml ${CMAKE_BINARY_DIR}/RKNN.toml COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/RKNN.toml ${CMAKE_BINARY_DIR}/RKNN.toml COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/logging.toml ${CMAKE_BINARY_DIR}/logging.toml COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/motion_detector.toml ${CMAKE_BINARY_DIR}/motion_detector.toml COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/overlay.toml ${CMAKE_BINARY_DIR}/overlay.toml COPYONLY)
