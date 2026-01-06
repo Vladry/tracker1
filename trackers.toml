@@ -20,6 +20,9 @@ LEADING_ONLY = false
 # Минимальная скорость для учёта направления.
 LEADING_MIN_SPEED = 2.0
 
+# Минимальная норма усреднённого вектора направления, чтобы считать его пригодным для выбора ведущей цели.
+LeadingDirectionEps = 0.001
+
 [manual_tracker]
 # Максимальное количество одновременно отслеживаемых целей.
 MAX_TARGETS = 10
@@ -81,11 +84,35 @@ WATCHDOG_MOTION_RATIO = 0.8
 # Допуск угла движения для watchdog (градусы).
 WATCHDOG_ANGLE_TOLERANCE_DEG = 20.0
 
+# Pyr-scale для calcOpticalFlowFarneback: коэффициент масштабирования пирамиды между уровнями, определяющий детальность поля потока в watchdog.
+WatchdogFlowPyrScale = 0.5
+
+# Количество уровней пирамиды в calcOpticalFlowFarneback для watchdog, влияющее на устойчивость к крупным смещениям.
+WatchdogFlowLevels = 3
+
+# Размер окна в calcOpticalFlowFarneback для watchdog, определяющий область усреднения при расчёте оптического потока.
+WatchdogFlowWinSize = 15
+
+# Число итераций на каждом уровне пирамиды в calcOpticalFlowFarneback для watchdog, повышающее точность при больших значениях.
+WatchdogFlowIterations = 3
+
+# Размер окрестности (poly_n) в calcOpticalFlowFarneback для watchdog, задающий порядок аппроксимации поля потока.
+WatchdogFlowPolyN = 5
+
+# Sigma (poly_sigma) аппроксимации полинома в calcOpticalFlowFarneback для watchdog, регулирующая сглаживание.
+WatchdogFlowPolySigma = 1.2
+
+# Флаги calcOpticalFlowFarneback для watchdog, позволяющие включить дополнительные режимы расчёта потока.
+WatchdogFlowFlags = 0
+
 # Размер истории видимости для фильтра потери.
 VISIBILITY_HISTORY_SIZE = 3
 
 # время, в течение которого нельзя отдавать другому треку кандидата, который был недавно отдан на отслеживание предыдущему треку.  Этим мы хотим, чтобы кандидат снова попал к посеревшему треку, который его отслеживал ранее.
 RESERVED_CANDIDATE_TTL_MS = 5000
+
+# Радиус (в пикселях), в пределах которого кандидаты считаются зарезервированными и исключаются из выбора других треков.
+ReservedDetectionRadiusPx = 200.0
 
 # Период обновления фоновой автодетекции (мс).
 AUTO_DETECTION_PERIOD_MS = 100
@@ -104,6 +131,9 @@ AUTO_HISTORY_SIZE = 3
 
 # Порог бинаризации diff для автодетекции.
 AUTO_DIFF_THRESHOLD = 15
+
+# Максимальное значение пикселя при бинаризации diff-кадра для автодетекции движения.
+MotionBinaryMaxValue = 255
 
 # Минимальная площадь контура для автодетекции.
 AUTO_MIN_AREA = 60.0

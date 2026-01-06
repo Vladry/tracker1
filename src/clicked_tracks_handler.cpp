@@ -91,9 +91,10 @@ ClickedTracksHandler::ClickedTracksHandler(const toml::table& tbl) {
                                        cfg_.AUTO_DIFF_THRESHOLD,
                                        cfg_.AUTO_MIN_AREA);
     motion_detector_.set_update_period_ms(cfg_.AUTO_DETECTION_PERIOD_MS);
+    motion_detector_.set_binarize_max_value(cfg_.MOTION_BINARY_MAX_VALUE);
 }
 
-// Загружает параметры ручного трекера из TOML и печатает краткую сводку.
+// Згружает параметры ручного трекера из TOML и печатает краткую сводку.
 // Любая ошибка в таблице [manual_tracker] приводит к исключению и сообщению в лог.
 bool ClickedTracksHandler::load_config(const toml::table& tbl) {
     try {
@@ -122,14 +123,23 @@ bool ClickedTracksHandler::load_config(const toml::table& tbl) {
         cfg_.WATCHDOG_PERIOD_MS = read_required<int>(*cfg, "WATCHDOG_PERIOD_MS");
         cfg_.WATCHDOG_MOTION_RATIO = read_required<float>(*cfg, "WATCHDOG_MOTION_RATIO");
         cfg_.WATCHDOG_ANGLE_TOLERANCE_DEG = read_required<float>(*cfg, "WATCHDOG_ANGLE_TOLERANCE_DEG");
+        cfg_.WATCHDOG_FLOW_PYR_SCALE = read_required<double>(*cfg, "WatchdogFlowPyrScale");
+        cfg_.WATCHDOG_FLOW_LEVELS = read_required<int>(*cfg, "WatchdogFlowLevels");
+        cfg_.WATCHDOG_FLOW_WINSIZE = read_required<int>(*cfg, "WatchdogFlowWinSize");
+        cfg_.WATCHDOG_FLOW_ITERATIONS = read_required<int>(*cfg, "WatchdogFlowIterations");
+        cfg_.WATCHDOG_FLOW_POLY_N = read_required<int>(*cfg, "WatchdogFlowPolyN");
+        cfg_.WATCHDOG_FLOW_POLY_SIGMA = read_required<double>(*cfg, "WatchdogFlowPolySigma");
+        cfg_.WATCHDOG_FLOW_FLAGS = read_required<int>(*cfg, "WatchdogFlowFlags");
         cfg_.VISIBILITY_HISTORY_SIZE = read_required<int>(*cfg, "VISIBILITY_HISTORY_SIZE");
         cfg_.RESERVED_CANDIDATE_TTL_MS = read_required<int>(*cfg, "RESERVED_CANDIDATE_TTL_MS");
+        cfg_.RESERVED_DETECTION_RADIUS_PX = read_required<float>(*cfg, "ReservedDetectionRadiusPx");
         cfg_.AUTO_DETECTION_PERIOD_MS = read_required<int>(*cfg, "AUTO_DETECTION_PERIOD_MS");
         cfg_.MOTION_DETECTION_ITERATIONS = read_required<int>(*cfg, "MOTION_DETECTION_ITERATIONS");
         cfg_.MOTION_DETECTION_DIFFUSION_PX = read_required<float>(*cfg, "MOTION_DETECTION_DIFFUSION_PX");
         cfg_.MOTION_DETECTION_CLUSTER_RATIO = read_required<float>(*cfg, "MOTION_DETECTION_CLUSTER_RATIO");
         cfg_.AUTO_HISTORY_SIZE = read_required<int>(*cfg, "AUTO_HISTORY_SIZE");
         cfg_.AUTO_DIFF_THRESHOLD = read_required<int>(*cfg, "AUTO_DIFF_THRESHOLD");
+        cfg_.MOTION_BINARY_MAX_VALUE = read_required<int>(*cfg, "MotionBinaryMaxValue");
         cfg_.AUTO_MIN_AREA = read_required<double>(*cfg, "AUTO_MIN_AREA");
         cfg_.FLOODFILL_FILL_OVERLAY = read_required<bool>(*cfg, "FLOODFILL_FILL_OVERLAY");
         cfg_.FLOODFILL_OVERLAY_ALPHA = read_required<float>(*cfg, "FLOODFILL_OVERLAY_ALPHA");
@@ -155,7 +165,7 @@ bool ClickedTracksHandler::point_in_rect_with_padding(const cv::Rect2f& rect, in
 }
 
 // Записывает видимость трека в кольцевую историю последних N кадров.
-// Это ядро правила "N кадров без обновления -> показать серый bbox".
+// Это ядр правила "N кадров без обновления -> показать серый bbox".
 void ClickedTracksHandler::record_visibility(ClickedTrack& track, bool visible) {
     const size_t history_size = track.visibility_history.size();
     if (history_size == 0) {
@@ -198,7 +208,16 @@ bool ClickedTracksHandler::has_group_motion(const cv::Mat& prev_gray,
     const cv::Mat prev_roi = prev_gray(clipped);
     const cv::Mat curr_roi = curr_gray(clipped);
     cv::Mat flow;
-    cv::calcOpticalFlowFarneback(prev_roi, curr_roi, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+    cv::calcOpticalFlowFarneback(prev_roi,
+                                 curr_roi,
+                                 flow,
+                                 cfg_.WATCHDOG_FLOW_PYR_SCALE,
+                                 cfg_.WATCHDOG_FLOW_LEVELS,
+                                 cfg_.WATCHDOG_FLOW_WINSIZE,
+                                 cfg_.WATCHDOG_FLOW_ITERATIONS,
+                                 cfg_.WATCHDOG_FLOW_POLY_N,
+                                 cfg_.WATCHDOG_FLOW_POLY_SIGMA,
+                                 cfg_.WATCHDOG_FLOW_FLAGS);
 
     const int total_pixels = clipped.width * clipped.height;
     if (total_pixels <= 0) {
@@ -272,6 +291,7 @@ void ClickedTracksHandler::mark_track_lost(ClickedTrack& track, long long now_ms
             cfg_.AUTO_DIFF_THRESHOLD,
             cfg_.AUTO_MIN_AREA
     );
+    track.candidate_search.set_reserved_detection_radius(cfg_.RESERVED_DETECTION_RADIUS_PX);
 }
 
 // Создаёт экземпляр OpenCV-трекера на основе настроек.
@@ -409,6 +429,7 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
                         cfg_.AUTO_DIFF_THRESHOLD,
                         cfg_.AUTO_MIN_AREA
                 );
+                track.candidate_search.set_reserved_detection_radius(cfg_.RESERVED_DETECTION_RADIUS_PX);
 
                 tracks_.push_back(std::move(track));
                 refresh_targets();

@@ -20,12 +20,14 @@ public:
                                  int history_size,
                                  int diff_threshold,
                                  double min_area);
+    // Устанавливает радиус, в котором зарезервированные кандидаты исключаются из выбора.
+    void set_reserved_detection_radius(float radius_px);
     // Сбрасывает активный поиск и очищает буферы кадров.
     void reset();
 
     // Инициализирует поиск вокруг последней позиции цели.
     void start(const cv::Point2f& last_pos, long long now_ms, const cv::Mat& frame);
-    // Продвигает поиск и возвращает найденный bbox при успехе.
+    // Продвигает поиск и возвращает найденнй bbox при успехе.
     bool update(const cv::Mat& frame, cv::Rect2f& out_bbox);
 
     // Обновляет список текущих отслеживаемых bbox.

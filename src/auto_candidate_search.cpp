@@ -41,6 +41,10 @@ void AutoCandidateSearch::configure_motion_filter(int iterations,
     detection_matcher_.set_motion_params(history_size, diff_threshold, min_area);
 }
 
+void AutoCandidateSearch::set_reserved_detection_radius(float radius_px) {
+    detection_matcher_.set_reserved_detection_radius(radius_px);
+}
+
 // Сбрасывает внутреннее состояние поиска кандидатов.
 // Останавливает активный сбор кадров и очищает буферы, чтобы начать поиск заново.
 void AutoCandidateSearch::reset() {

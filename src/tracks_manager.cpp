@@ -25,11 +25,13 @@ bool TracksManager::load_tracker_config(const toml::table& tbl) {
         cfg_.MAX_TARGETS = read_required<int>(*tracker, "MAX_TARGETS");
         cfg_.LEADING_ONLY = read_required<bool>(*tracker, "LEADING_ONLY");
         cfg_.LEADING_MIN_SPEED = read_required<float>(*tracker, "LEADING_MIN_SPEED");
+        cfg_.LEADING_DIR_EPS = read_required<float>(*tracker, "LeadingDirectionEps");
         std::cout << "[TRK] config: IOU_THRESHOLD=" << cfg_.IOU_THRESHOLD
                   << " MAX_MISSED_FRAMES=" << cfg_.MAX_MISSED_FRAMES
                   << " MAX_TARGETS=" << cfg_.MAX_TARGETS
                   << " LEADING_ONLY=" << (cfg_.LEADING_ONLY ? "true" : "false")
                   << " LEADING_MIN_SPEED=" << cfg_.LEADING_MIN_SPEED
+                  << " LEADING_DIR_EPS=" << cfg_.LEADING_DIR_EPS
                   << std::endl;
         return true;
 
@@ -134,7 +136,7 @@ std::vector<Target> TracksManager::update(const std::vector<cv::Rect2f>& detecti
         if (weight_sum > 0.0f) {
             cv::Point2f dir = dir_sum * (1.0f / weight_sum);
             float dir_norm = std::sqrt(dir.x * dir.x + dir.y * dir.y);
-            if (dir_norm > 1e-3f) {
+            if (dir_norm > cfg_.LEADING_DIR_EPS) {
                 dir *= (1.0f / dir_norm);
                 int best_index = -1;
                 float best_proj = -std::numeric_limits<float>::infinity();

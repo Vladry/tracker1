@@ -32,6 +32,10 @@ void MotionDetector::set_update_period_ms(int period_ms) {
     update_period_ms_ = std::max(1, period_ms);
 }
 
+void MotionDetector::set_binarize_max_value(int max_value) {
+    binarize_max_value_ = std::max(1, max_value);
+}
+
 void MotionDetector::reset() {
     gray_history_.clear();
     detection_history_.clear();
@@ -98,7 +102,7 @@ std::vector<cv::Point2f> MotionDetector::detect_by_motion(const cv::Mat& frame) 
     const cv::Mat& last = gray_history_.back();
     cv::Mat diff;
     cv::absdiff(first, last, diff);
-    cv::threshold(diff, diff, diff_threshold_, 255, cv::THRESH_BINARY);
+    cv::threshold(diff, diff, diff_threshold_, binarize_max_value_, cv::THRESH_BINARY);
 
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(diff, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);

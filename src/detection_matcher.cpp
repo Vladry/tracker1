@@ -45,6 +45,10 @@ void DetectionMatcher::set_reserved_detection_points(const std::vector<cv::Point
     reserved_detection_points_ = reserved_points;
 }
 
+void DetectionMatcher::set_reserved_detection_radius(float radius_px) {
+    reserved_detection_radius_ = std::max(0.0f, radius_px);
+}
+
 void DetectionMatcher::set_detection_params(int iterations,
                                             float diffusion_pixels,
                                             float cluster_ratio_threshold) {
