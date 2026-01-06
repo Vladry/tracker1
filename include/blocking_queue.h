@@ -74,8 +74,8 @@ public:
     }
 
 private:
-    mutable std::mutex m_; // - m_: мьютекс для защиты очереди.
-    std::condition_variable cv_; // - cv_: условная переменная для ожидания данных.
-    std::deque<T> q_; // - q_: контейнер для хранения элементов.
-    bool stop_ = false; // - stop_: флаг остановки очереди.
+    mutable std::mutex m_; // - мьютекс для защиты очереди.
+    std::condition_variable cv_; // - условная переменная для ожидания данных.
+    std::deque<T> q_; // - контейнер для хранения элементов.
+    bool stop_ = false; // - флаг остановки очереди.
 };

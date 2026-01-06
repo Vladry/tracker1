@@ -18,8 +18,8 @@ extern std::atomic<bool> g_rtsp_restart_requested;
 class DisplayLoop {
 public:
     struct Config {
-        int TARGET_FPS = 30; // - TARGET_FPS: ограничение FPS для UI.
-        std::string WINDOW_NAME = "video"; // - WINDOW_NAME: имя окна OpenCV.
+        int TARGET_FPS = 30; // - ограничение FPS для UI.
+        std::string WINDOW_NAME = "video"; // - имя окна OpenCV.
     };
 
     // Базовый конструктор — дефолтная конфигурация
@@ -33,7 +33,7 @@ public:
     void run();
 
 private:
-    FrameStore& frames_; // - frames_: источник кадров для отображения.
-    Config cfg_; // - cfg_: параметы окна и частоты обновления.
-    RateLimiter limiter_; // - limiter_: ограничитель частоты кадров.
+    FrameStore& frames_; // - источник кадров для отображения.
+    Config cfg_; // - параметы окна и частоты обновления.
+    RateLimiter limiter_; // - ограничитель частоты кадров.
 };

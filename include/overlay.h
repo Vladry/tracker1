@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 
-#include "tracker_manager.h"      // struct Target { int id; cv::Rect bbox; ... }
+#include "tracks_manager.h"      // struct Target { int id; cv::Rect bbox; ... }
 #include "static_box_manager.h"   // struct static_box { int id; cv::Rect rect; static_box_state state; ... }
 #include "static_target_manager.h"
 #include "config.h"
@@ -21,9 +21,9 @@
 class OverlayRenderer {
 public:
     struct Config {
-        float HUD_ALPHA = 0.25f; // - HUD_ALPHA: прозрачность HUD.
-        int DYNAMIC_BBOX_WINDOW = 5; // - DYNAMIC_BBOX_WINDOW: окно сглаживания динамических bbox.
-        int TARGETING_CROSS_SIZE = 7; // - TARGETING_CROSS_SIZE: размер красного крестика цели.
+        float HUD_ALPHA = 0.25f; // - прозрачность HUD.
+        int DYNAMIC_BBOX_WINDOW = 5; // - окно сглаживания динамических bbox.
+        int TARGETING_CROSS_SIZE = 7; // - размер красного крестика цели.
     };
 
     // Создаёт рендерер и загружает настройки из TOML.
@@ -50,7 +50,7 @@ public:
     ) const;
 
 private:
-    Config cfg_; // - cfg_: настройки визуализации оверлея.
+    Config cfg_; // - настройки визуализации оверлея.
     // Загружает параметры оверлея из конфигурации.
     bool load_overlay_config(const toml::table& tbl);
 

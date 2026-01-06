@@ -2,18 +2,18 @@
 
 #include <opencv2/opencv.hpp>
 #include <vector>
-#include "automatic_motion_detector.h"
-#include "manual_motion_detector.h"
+#include "detection_matcher.h"
+#include "clicked_target_shaper.h"
 
 class AutoCandidateSearch {
 public:
     AutoCandidateSearch() = default;
-    // Создаёт поисковый модуль с заданным детектором движения.
-    AutoCandidateSearch(const ManualMotionDetector* detector, AutoDetectionProvider* detection_provider);
+    // Создаёт поисковый модуль с заданным формирователем цели и фоновым детектором.
+    AutoCandidateSearch(const ClickedTargetShaper* detector, MotionDetector* motion_detector);
 
-    // Назначает детектор движения для поиска кандидатов.
-    void configure(const ManualMotionDetector* detector, AutoDetectionProvider* detection_provider);
-    // Обновляет параметры фильтрации автодетектора движения.
+    // Назначает формирователь цели и фоновый детектор для поиска кандидатов.
+    void configure(const ClickedTargetShaper* detector, MotionDetector* motion_detector);
+    // Обновляет параметры фильтрации фонового детектора движения.
     void configure_motion_filter(int iterations,
                                  float diffusion_pixels,
                                  float cluster_ratio_threshold,
@@ -36,15 +36,15 @@ public:
     bool active() const { return active_; }
 
 private:
-    const ManualMotionDetector* detector_ = nullptr; // - detector_: указатель на детектор движения для поиска кандидатов.
-    bool started_ = false; // - started_: был ли поиск инициализирован (зафиксирован last_pos_).
-    bool active_ = false; // - active_: выполняется ли активный сбор кадров для ROI.
-    bool best_candidate_selected_ = false; // - best_candidate_selected_: выбрана ли ближайшая точка для ROI.
-    long long start_ms_ = 0; // - start_ms_: время начала поиска (используется для тайминга снаружи).
-    cv::Rect roi_; // - roi_: текущая область, в которой ищется движение.
-    std::vector<cv::Mat> gray_frames_; // - gray_frames_: накопленные кадры в ттенках серого для анализа движения.
-    cv::Point2f last_pos_{0.0f, 0.0f}; // - last_pos_: последняя известная позиция цели, вокруг которой строится ROI.
-    std::vector<cv::Rect2f> tracked_boxes_; // - tracked_boxes_: bbox уже отслеживаемых целей для фильтрации.
-    AutomaticMotionDetector automatic_detector_; // - automatic_detector_: детектор движения для поиска кандидатов.
-    AutoDetectionProvider* detection_provider_ = nullptr; // - detection_provider_: провайдер фоновых детекций.
+    const ClickedTargetShaper* detector_ = nullptr; // - указатель на формирователь цели по клику.
+    bool started_ = false; // - был ли поиск инициализирован (зафиксирован last_pos_).
+    bool active_ = false; // - выполняется ли активный сбор кадров для ROI.
+    bool best_candidate_selected_ = false; // - выбрана ли ближайшая точка для ROI.
+    long long start_ms_ = 0; // - время начала поиска (используется для тайминга снаружи).
+    cv::Rect roi_; // - текущая область, в которой ищется движение.
+    std::vector<cv::Mat> gray_frames_; // - накопленные кадры в оттенках серого для анализа движения.
+    cv::Point2f last_pos_{0.0f, 0.0f}; // - последняя известная позиция цели, вокруг которой строится ROI.
+    std::vector<cv::Rect2f> tracked_boxes_; // - bbox уже отслеживаемых целей для фильтрации.
+    DetectionMatcher detection_matcher_; // - выбор ближайшей детекции из пула.
+    MotionDetector* motion_detector_ = nullptr; // - фоновый детектор движения (пул кандидатов).
 };

@@ -2,15 +2,16 @@
 
 #include <opencv2/opencv.hpp>
 #include <vector>
-#include "auto_detection_provider.h"
-#include "manual_motion_detector.h"
+#include "motion_detector.h"
+#include "clicked_target_shaper.h"
 
-class AutomaticMotionDetector {
+// Выбирает ближайшую детекцию из пула MotionDetector с учётом резерва.
+class DetectionMatcher {
 public:
-    explicit AutomaticMotionDetector(const ManualMotionDetector* detector = nullptr);
+    explicit DetectionMatcher(const ClickedTargetShaper* detector = nullptr);
 
-    void set_detector(const ManualMotionDetector* detector);
-    void set_detection_provider(AutoDetectionProvider* provider);
+    void set_detector(const ClickedTargetShaper* detector);
+    void set_motion_detector(MotionDetector* motion_detector);
     void set_tracked_boxes(const std::vector<cv::Rect2f>& tracked_boxes);
     void set_reserved_detection_points(const std::vector<cv::Point2f>& reserved_points);
     void set_detection_params(int iterations, float diffusion_pixels, float cluster_ratio_threshold);
@@ -23,8 +24,8 @@ public:
                       cv::Point2f& out_point) const;
 
 private:
-    const ManualMotionDetector* detector_ = nullptr;
-    AutoDetectionProvider* detection_provider_ = nullptr;
+    const ClickedTargetShaper* detector_ = nullptr;
+    MotionDetector* motion_detector_ = nullptr;
     std::vector<cv::Rect2f> tracked_boxes_;
     std::vector<cv::Point2f> reserved_detection_points_;
     int detection_iterations_ = 10;
@@ -33,5 +34,5 @@ private:
     int history_size_ = 5;
     int diff_threshold_ = 25;
     double min_area_ = 60.0;
-    float reserved_detection_radius_ = 500.0f;
+    float reserved_detection_radius_ = 200.0f;
 };

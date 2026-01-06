@@ -6,7 +6,7 @@
 #include <vector>
 #include "frame_store.h"
 #include "rtsp_worker.h"
-#include "manual_tracker_manager.h"
+#include "clicked_tracks_handler.h"
 #include "static_target_manager.h"
 #include "overlay.h"
 #include <atomic>
@@ -89,7 +89,7 @@ static toml::table load_config_tables() {
 
 // ===================== GLOBALS FOR MOUSE CALLBACK =====================
 
-static ManualTrackerManager *g_manual_tracker = nullptr;
+static ClickedTracksHandler *g_manual_tracker = nullptr;
 static StaticTargetManager *g_static_manager = nullptr;
 static std::mutex g_last_frame_mutex;
 static cv::Mat g_last_frame;
@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
     toml::table tbl = load_config_tables();
     load_logging_config(tbl, g_logging);
     RtspWorker rtsp(raw_store, tbl);
-    ManualTrackerManager tracker(tbl);
+    ClickedTracksHandler tracker(tbl);
     StaticTargetManager static_targets(tbl);
     OverlayRenderer overlay(tbl);
     rtsp.start();

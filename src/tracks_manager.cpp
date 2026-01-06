@@ -1,15 +1,19 @@
-#include "tracker_manager.h"
+#include "tracks_manager.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
 
+/*
+  менеджер треков, отвечает за треки (IOU‑ассоциация, missed‑frames)
+  -- см. описание в word-файле
+ */
 
-TrackerManager::TrackerManager(const toml::table& tbl) {
+TracksManager::TracksManager(const toml::table& tbl) {
     load_tracker_config(tbl);
 }
 
-bool TrackerManager::load_tracker_config(const toml::table& tbl) {
+bool TracksManager::load_tracker_config(const toml::table& tbl) {
 // ---------------------------- [tracker] ---------------------------
     try {
         const auto *tracker = tbl["tracker"].as_table();
@@ -36,14 +40,14 @@ bool TrackerManager::load_tracker_config(const toml::table& tbl) {
 };
 
 
-void TrackerManager::reset() {
+void TracksManager::reset() {
     tracks_.clear();
     targets_.clear();
     next_id_ = 1;
     leading_id_ = -1;
 }
 
-float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
+float TracksManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
     float inter = (a & b).area();
     float uni = a.area() + b.area() - inter;
     if (uni <= 0.f) return 0.f;
@@ -52,7 +56,7 @@ float TrackerManager::iou(const cv::Rect2f& a, const cv::Rect2f& b) {
 
 
 
-std::vector<Target> TrackerManager::update(const std::vector<cv::Rect2f>& detections) {
+std::vector<Target> TracksManager::update(const std::vector<cv::Rect2f>& detections) {
     std::cout << "[TRK] update: detections=" << detections.size()
               << " tracks_before=" << tracks_.size()
               << std::endl;

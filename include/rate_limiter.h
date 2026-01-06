@@ -24,6 +24,6 @@ public:
     }
 
 private:
-    std::chrono::microseconds period_; // - period_: длительность одного шага.
-    std::chrono::steady_clock::time_point next_; // - next_: время следующего шага.
+    std::chrono::microseconds period_; // - длительность одного шага.
+    std::chrono::steady_clock::time_point next_; // - время следующего шага.
 };

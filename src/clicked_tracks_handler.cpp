@@ -1,4 +1,4 @@
-#include "manual_tracker_manager.h"
+#include "clicked_tracks_handler.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -49,11 +49,21 @@ namespace {
 
 }
 
+/*   clicked_tracks_handler :
+Принимает клики оператора и создаёт цели из ROI (цепочка ручного клика).
+Ведёт треки, обновляет их, переводит в lost, пересоздаёт трекер, ведёт history и т.д.
+Запускает авто‑поиск кандидатов (auto‑candidate search) для серых треков.
+Использует фоновую автодетекцию для возврата целей (MotionDetector + DetectionMatcher).
+То есть это менеджер системы “ручных треков + их авто‑восстановление”.
+Он управляет не только “кликнутыми целями”, но и автоматическим восстановлением, резервацией кандидатов и историей видимости.
+ */
+
+
 // Конструктор: поднимает логирование и загружает настройки ручного трекера.
-ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {
+ClickedTracksHandler::ClickedTracksHandler(const toml::table& tbl) {
     load_logging_config(tbl, log_cfg_);
     load_config(tbl);
-    ManualMotionDetectorConfig motion_cfg;
+    ClickedTargetShaperConfig motion_cfg;
     motion_cfg.CLICK_CAPTURE_SIZE = cfg_.CLICK_CAPTURE_SIZE;
     motion_cfg.MOTION_FRAMES = cfg_.MOTION_FRAMES;
     motion_cfg.MOTION_DIFF_THRESHOLD = cfg_.MOTION_DIFF_THRESHOLD;
@@ -73,19 +83,19 @@ ManualTrackerManager::ManualTrackerManager(const toml::table& tbl) {
     motion_cfg.MIN_AREA = cfg_.MIN_AREA;
     motion_cfg.MIN_WIDTH = cfg_.MIN_WIDTH;
     motion_cfg.MIN_HEIGHT = cfg_.MIN_HEIGHT;
-    motion_detector_.update_config(motion_cfg);
-    detection_provider_.set_detection_params(cfg_.MOTION_DETECTION_ITERATIONS,
-                                             cfg_.MOTION_DETECTION_DIFFUSION_PX,
-                                             cfg_.MOTION_DETECTION_CLUSTER_RATIO);
-    detection_provider_.set_motion_params(cfg_.AUTO_HISTORY_SIZE,
-                                          cfg_.AUTO_DIFF_THRESHOLD,
-                                          cfg_.AUTO_MIN_AREA);
-    detection_provider_.set_update_period_ms(cfg_.AUTO_DETECTION_PERIOD_MS);
+    clicked_target_shaper_.update_config(motion_cfg);
+    motion_detector_.set_detection_params(cfg_.MOTION_DETECTION_ITERATIONS,
+                                          cfg_.MOTION_DETECTION_DIFFUSION_PX,
+                                          cfg_.MOTION_DETECTION_CLUSTER_RATIO);
+    motion_detector_.set_motion_params(cfg_.AUTO_HISTORY_SIZE,
+                                       cfg_.AUTO_DIFF_THRESHOLD,
+                                       cfg_.AUTO_MIN_AREA);
+    motion_detector_.set_update_period_ms(cfg_.AUTO_DETECTION_PERIOD_MS);
 }
 
 // Загружает параметры ручного трекера из TOML и печатает краткую сводку.
 // Любая ошибка в таблице [manual_tracker] приводит к исключению и сообщению в лог.
-bool ManualTrackerManager::load_config(const toml::table& tbl) {
+bool ClickedTracksHandler::load_config(const toml::table& tbl) {
     try {
         const auto *cfg = tbl["manual_tracker"].as_table();
         if (!cfg) {
@@ -139,14 +149,14 @@ bool ManualTrackerManager::load_config(const toml::table& tbl) {
 
 // Проверяет попадание клика в bbox с расширением по краям.
 // Нужна для логики "клик по зелёному боксу удаляет цель".
-bool ManualTrackerManager::point_in_rect_with_padding(const cv::Rect2f& rect, int x, int y, int pad) const {
+bool ClickedTracksHandler::point_in_rect_with_padding(const cv::Rect2f& rect, int x, int y, int pad) const {
     cv::Rect2f padded(rect.x - pad, rect.y - pad, rect.width + pad * 2.0f, rect.height + pad * 2.0f);
     return padded.contains(cv::Point2f(static_cast<float>(x), static_cast<float>(y)));
 }
 
 // Записывает видимость трека в кольцевую историю последних N кадров.
 // Это ядро правила "N кадров без обновления -> показать серый bbox".
-void ManualTrackerManager::record_visibility(ManualTrack& track, bool visible) {
+void ClickedTracksHandler::record_visibility(ClickedTrack& track, bool visible) {
     const size_t history_size = track.visibility_history.size();
     if (history_size == 0) {
         return;
@@ -157,7 +167,7 @@ void ManualTrackerManager::record_visibility(ManualTrack& track, bool visible) {
 
 // Проверяет, что трек не был виден в последних N кадрах.
 // Возвращает true, когда цель считается потерянной для отрисовки.
-bool ManualTrackerManager::has_recent_visibility_loss(const ManualTrack& track) const {
+bool ClickedTracksHandler::has_recent_visibility_loss(const ClickedTrack& track) const {
     if (track.visibility_history.empty()) {
         return false;
     }
@@ -170,12 +180,12 @@ bool ManualTrackerManager::has_recent_visibility_loss(const ManualTrack& track) 
 // Если синхронное движение не обнаружено — трек принудительно переводится в режим потери (серый bbox) и запускается поиск кандидата.
 // Запускается по watchdog в update, чтобы убивать "залипшие" статические треки отвязавшиеся от целей.
 // метод реализует детекцию синхронного движения:  cv::calcOpticalFlowFarneback(prev_roi, curr_roi, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
-// Работает совместно с ManualTrackerManager::mark_track_lost
+// Работает совместно с ClickedTracksHandler::mark_track_lost
 //Логика:
 //Оптический поток рассчитывается в ROI. Усредняется направление движения.
 //Считается доля пикселей, чьи векторы движения совпадают по направлению с усреднённым.
 //Если доля меньше заданного порога — считается, что движения нет.
-bool ManualTrackerManager::has_group_motion(const cv::Mat& prev_gray,
+bool ClickedTracksHandler::has_group_motion(const cv::Mat& prev_gray,
                                             const cv::Mat& curr_gray,
                                             const cv::Rect2f& roi) const {
     if (prev_gray.empty() || curr_gray.empty()) {
@@ -245,7 +255,7 @@ bool ManualTrackerManager::has_group_motion(const cv::Mat& prev_gray,
 
 
 // Метод перевода трека в состояние потери цели. Работает совместно с has_group_motion
-void ManualTrackerManager::mark_track_lost(ManualTrack& track, long long now_ms) {
+void ClickedTracksHandler::mark_track_lost(ClickedTrack& track, long long now_ms) {
     track.lost_since_ms = now_ms;
     if (track.visibility_history.empty()) {
         track.visibility_history.assign(static_cast<size_t>(cfg_.VISIBILITY_HISTORY_SIZE), false);
@@ -266,7 +276,7 @@ void ManualTrackerManager::mark_track_lost(ManualTrack& track, long long now_ms)
 
 // Создаёт экземпляр OpenCV-трекера на основе настроек.
 // Поддерживает KCF и CSRT.
-cv::Ptr<cv::Tracker> ManualTrackerManager::create_tracker() const {
+cv::Ptr<cv::Tracker> ClickedTracksHandler::create_tracker() const {
     std::string type = cfg_.TRACKER_TYPE;
     std::transform(type.begin(), type.end(), type.begin(), [](unsigned char ch) {
         return static_cast<char>(std::toupper(ch));
@@ -279,7 +289,7 @@ cv::Ptr<cv::Tracker> ManualTrackerManager::create_tracker() const {
 
 // Обработчик ЛКМ: удаляет цель по клику по bbox или инициирует новую.
 // Клик по пустому месту создаёт PendingClick для анализа движения.
-bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long long now_ms) {
+bool ClickedTracksHandler::handle_click(int x, int y, const cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
     (void)now_ms;
 
@@ -301,7 +311,7 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
         return false;
     }
 
-    cv::Rect roi = motion_detector_.make_click_roi(frame, x, y);
+    cv::Rect roi = clicked_target_shaper_.make_click_roi(frame, x, y);
     if (roi.area() <= 0) {
         return false;
     }
@@ -321,7 +331,7 @@ bool ManualTrackerManager::handle_click(int x, int y, const cv::Mat& frame, long
 
 // Основной цикл обновления: обрабатывает pending-клики, треки и выводит Target-ы.
 // Здесь же формируется логика "N кадров без обновления -> серый bbox".
-void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
+void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     if (frame.empty()) {
@@ -329,7 +339,8 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         return;
     }
 
-    detection_provider_.update(frame, now_ms);
+    // Цепочка 2: фоновые детекции обновляются каждый кадр и используют периодизацию.
+    motion_detector_.update(frame, now_ms);
     cv::Mat current_gray = to_gray(frame);
     const bool should_run_watchdog = !watchdog_prev_gray_.empty()
                                      && (now_ms - watchdog_prev_ms_ >= cfg_.WATCHDOG_PERIOD_MS);
@@ -353,9 +364,11 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         cv::Mat gray = current_gray;
         // Цикл: дополняет историю кадров для pending-кликов и, при готовности,
         //       пытается создать трек на основе движения в ROI.
+        // Цепочка 1: клик → накопление кадров → clicked_target_shaper_ → bbox для трекера.
         for (auto it = pending_clicks_.begin(); it != pending_clicks_.end(); ) {
             it->gray_frames.push_back(gray);
-            const int required = motion_detector_.required_frames();
+            // Цепочка 1: подтверждение клика оператором и формирование bbox.
+            const int required = clicked_target_shaper_.required_frames();
             if (static_cast<int>(it->gray_frames.size()) < required) {
                 ++it;
                 continue;
@@ -369,13 +382,13 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             std::vector<cv::Point2f> motion_points;
             cv::Rect2f motion_roi;
             cv::Rect2f tracker_roi;
-            if (motion_detector_.build_candidate(it->gray_frames, it->roi, frame.size(),
-                                                 tracker_roi, &motion_points, &motion_roi)) {
+            if (clicked_target_shaper_.build_candidate(it->gray_frames, it->roi, frame.size(),
+                                                       tracker_roi, &motion_points, &motion_roi)) {
                 if (log_cfg_.MANUAL_DETECTOR_LEVEL_LOGGER) {
                     std::cout << "[MANUAL] capture dynamic click id=" << next_id_ << std::endl;
                 }
 
-                ManualTrack track;
+                ClickedTrack track;
                 track.id = next_id_++;
                 track.bbox = tracker_roi;
                 track.tracker = create_tracker();
@@ -387,7 +400,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
                                      ? rect_center(motion_roi)
                                      : rect_center(track.bbox);
                 track.last_known_center = track.cross_center;
-                track.candidate_search.configure(&motion_detector_, &detection_provider_);
+                track.candidate_search.configure(&clicked_target_shaper_, &motion_detector_);
                 track.candidate_search.configure_motion_filter(
                         cfg_.MOTION_DETECTION_ITERATIONS,
                         cfg_.MOTION_DETECTION_DIFFUSION_PX,
@@ -496,13 +509,14 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
         }
 
         if (it->lost_since_ms > 0) {
+            // Цепочка 2: потеря → AutoCandidateSearch → DetectionMatcher → пул MotionDetector.
             if (!it->candidate_search.active()) {
                 it->candidate_search.start(it->last_known_center, now_ms, frame);
             }
             cv::Rect2f candidate_bbox;
             if (it->candidate_search.update(frame, candidate_bbox)) {
                 if (log_cfg_.MANUAL_DETECTOR_LEVEL_LOGGER) {
-                     std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
+                    std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
                 }
                 it->bbox = candidate_bbox;
                 reserved_candidates_.push_back({candidate_bbox,
@@ -547,7 +561,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
 
 // Преобразует текущие треки в выходной список целей.
 // missed_frames используется только как сигнал "серый bbox" для рендера.
-void ManualTrackerManager::refresh_targets() {
+void ClickedTracksHandler::refresh_targets() {
     targets_.clear();
     targets_.reserve(tracks_.size());
     // Цикл: преобразует внутренние треки в Target для отрисовки/экспорта.

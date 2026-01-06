@@ -13,14 +13,14 @@ enum class static_box_state {
 };
 
 struct static_box {
-    int id; // - id: идентификатор статического бокса.
-    cv::Rect2f rect; // - rect: текущий bbox статической цели.
+    int id; // - идентификатор статического бокса.
+    cv::Rect2f rect; // - текущий bbox статической цели.
 
-    int last_dynamic_id; // - last_dynamic_id: id динамической цели, к которой привязан бокс.
-    float confidence; // - confidence: уверенность привязки.
-    int missed_frames = 0; // - missed_frames: число кадров без обновления.
+    int last_dynamic_id; // - id динамической цели, к которой привязан бокс.
+    float confidence; // - уверенность привязки.
+    int missed_frames = 0; // - число кадров без обновления.
 
-    static_box_state state; // - state: текущее состояние статической цели.
+    static_box_state state; // - текущее состояние статической цели.
 };
 
 
@@ -55,33 +55,33 @@ private:
 // Static rebind configuration
 // ============================================================================
         // Автоматическая перепривязка static bbox
-        bool AUTO_REBIND = true; // - AUTO_REBIND: включение автоматической перепривязки.
+        bool AUTO_REBIND = true; // - включение автоматической перепривязки.
 
         // Максимально допустимое количество пропущенных кадров
-        int MAX_MISSED_FRAMES = 3; // - MAX_MISSED_FRAMES: допустимое количество пропусков кадров.
+        int MAX_MISSED_FRAMES = 3; // - допустимое количество пропусков кадров.
 
         // Максимальное количество статических боксов
-        int MAX_STATIC_BOXES = 1; // - MAX_STATIC_BOXES: максимум одновременно активных статических боксов.
+        int MAX_STATIC_BOXES = 1; // - максимум одновременно активных статических боксов.
 
         // Длина истории траекторий
-        int TRAJECTORY_HISTORY_SIZE = 8; // - TRAJECTORY_HISTORY_SIZE: длина истории траекторий (кадры).
+        int TRAJECTORY_HISTORY_SIZE = 8; // - длина истории траекторий (кадры).
 
         // Порог похожести направления движения
-        float DIRECTION_SIMILARITY_THRESHOLD = 0.5f; // - DIRECTION_SIMILARITY_THRESHOLD: порог похожести направления.
+        float DIRECTION_SIMILARITY_THRESHOLD = 0.5f; // - порог похожести направления.
 
         // Эпсилон для сравнения расстояний
-        float NEARBY_DISTANCE_EPSILON = 10.0f; // - NEARBY_DISTANCE_EPSILON: допуск по расстоянию (пиксели).
+        float NEARBY_DISTANCE_EPSILON = 10.0f; // - допуск по расстоянию (пиксели).
     };
 
     struct TrajectoryHistory {
-        std::deque<cv::Point2f> points; // - points: история центров динамической цели.
-        int missed_frames = 0; // - missed_frames: количество кадров без обновления истории.
+        std::deque<cv::Point2f> points; // - история центров динамической цели.
+        int missed_frames = 0; // - количество кадров без обновления истории.
     };
 
-    StaticBoxConfig cfg_; // - cfg_: конфигурация статических боксов.
-    std::vector <static_box> boxes_; // - boxes_: текущие статические боксы.
-    int next_id_ = 1; // - next_id_: счётчик идентификаторов.
-    std::unordered_map<int, TrajectoryHistory> trajectories_; // - trajectories_: истории движения динамических целей.
+    StaticBoxConfig cfg_; // - конфигурация статических боксов.
+    std::vector <static_box> boxes_; // - текущие статические боксы.
+    int next_id_ = 1; // - счётчик идентификаторов.
+    std::unordered_map<int, TrajectoryHistory> trajectories_; // - истории движения динамических целей.
 
     // Обновляет историю траекторий на основе динамических целей.
     void update_trajectories(

@@ -1,12 +1,12 @@
-#include "auto_detection_provider.h"
+#include "motion_detector.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
-void AutoDetectionProvider::set_detection_params(int iterations,
-                                                 float diffusion_pixels,
-                                                 float cluster_ratio_threshold) {
+void MotionDetector::set_detection_params(int iterations,
+                                          float diffusion_pixels,
+                                          float cluster_ratio_threshold) {
     detection_iterations_ = std::max(1, iterations);
     diffusion_pixels_ = std::max(1.0f, diffusion_pixels);
     cluster_ratio_threshold_ = std::max(0.0f, std::min(cluster_ratio_threshold, 1.0f));
@@ -17,7 +17,7 @@ void AutoDetectionProvider::set_detection_params(int iterations,
     }
 }
 
-void AutoDetectionProvider::set_motion_params(int history_size, int diff_threshold, double min_area) {
+void MotionDetector::set_motion_params(int history_size, int diff_threshold, double min_area) {
     history_size_ = std::max(2, history_size);
     diff_threshold_ = std::max(0, diff_threshold);
     min_area_ = std::max(0.0, min_area);
@@ -28,21 +28,35 @@ void AutoDetectionProvider::set_motion_params(int history_size, int diff_thresho
     }
 }
 
-void AutoDetectionProvider::set_update_period_ms(int period_ms) {
+void MotionDetector::set_update_period_ms(int period_ms) {
     update_period_ms_ = std::max(1, period_ms);
 }
 
-void AutoDetectionProvider::reset() {
+void MotionDetector::reset() {
     gray_history_.clear();
     detection_history_.clear();
     filtered_points_.clear();
     last_update_ms_ = 0;
 }
 
-void AutoDetectionProvider::update(const cv::Mat& frame, long long now_ms) {
+// Цепочка 2 (фоновая автодетекция):
+// 1) каждый кадр добавляется в историю gray_history_,
+// 2) с периодом update_period_ms_ выполняется detect_by_motion(),
+// 3) результаты агрегируются и кластеризуются в rebuild_filtered_points(),
+// 4) detections() возвращает итоговый пул кандидатов.
+void MotionDetector::update(const cv::Mat& frame, long long now_ms) {
     if (frame.empty()) {
         return;
     }
+
+    gray_history_.push_back(to_gray(frame));
+    if (static_cast<int>(gray_history_.size()) > history_size_) {
+        gray_history_.erase(gray_history_.begin());
+    }
+    if (gray_history_.size() < 2) {
+        return;
+    }
+
     if (last_update_ms_ > 0 && now_ms - last_update_ms_ < update_period_ms_) {
         return;
     }
@@ -56,7 +70,7 @@ void AutoDetectionProvider::update(const cv::Mat& frame, long long now_ms) {
     rebuild_filtered_points();
 }
 
-cv::Mat AutoDetectionProvider::to_gray(const cv::Mat& frame) {
+cv::Mat MotionDetector::to_gray(const cv::Mat& frame) {
     if (frame.channels() == 3) {
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
@@ -65,20 +79,17 @@ cv::Mat AutoDetectionProvider::to_gray(const cv::Mat& frame) {
     return frame.clone();
 }
 
-cv::Point2f AutoDetectionProvider::rect_center(const cv::Rect& rect) {
+cv::Point2f MotionDetector::rect_center(const cv::Rect& rect) {
     return cv::Point2f(rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f);
 }
 
-std::vector<cv::Point2f> AutoDetectionProvider::detect_by_motion(const cv::Mat& frame) {
+// Находит центры движущихся областей по разности первого и последнего кадров истории.
+std::vector<cv::Point2f> MotionDetector::detect_by_motion(const cv::Mat& frame) {
     std::vector<cv::Point2f> points;
     if (frame.empty()) {
         return points;
     }
 
-    gray_history_.push_back(to_gray(frame));
-    if (static_cast<int>(gray_history_.size()) > history_size_) {
-        gray_history_.erase(gray_history_.begin());
-    }
     if (gray_history_.size() < 2) {
         return points;
     }
@@ -103,10 +114,12 @@ std::vector<cv::Point2f> AutoDetectionProvider::detect_by_motion(const cv::Mat& 
         points.push_back(rect_center(rect));
     }
 
+//    std::cout<<"batch of detected points: "<<points<<std::endl;
+
     return points;
 }
 
-void AutoDetectionProvider::rebuild_filtered_points() {
+void MotionDetector::rebuild_filtered_points() {
     std::vector<cv::Point2f> all_points;
     for (const auto& sample : detection_history_) {
         all_points.insert(all_points.end(), sample.begin(), sample.end());

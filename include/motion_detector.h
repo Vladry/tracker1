@@ -4,9 +4,10 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-class AutoDetectionProvider {
+// Фоновый детектор движения, заполняющий пул кандидатов.
+class MotionDetector {
 public:
-    AutoDetectionProvider() = default;
+    MotionDetector() = default;
 
     void set_detection_params(int iterations, float diffusion_pixels, float cluster_ratio_threshold);
     void set_motion_params(int history_size, int diff_threshold, double min_area);

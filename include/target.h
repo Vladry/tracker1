@@ -7,26 +7,26 @@ enum class TargetClass : int {
 };
 
 struct TargetSize {
-    double width_m  = 0.0; // - width_m: ширина цели (метры).
-    double height_m = 0.0; // - height_m: высота цели (метры).
+    double width_m  = 0.0; // - ширина цели (метры).
+    double height_m = 0.0; // - высота цели (метры).
 };
 
 struct Target {
-    int id = -1; // - id: идентификатор цели.
-    std::string target_name; // - target_name: имя/метка цели.
-    TargetClass target_class = TargetClass::Unknown; // - target_class: класс цели.
-    TargetSize target_size; // - target_size: физические размеры цели.
+    int id = -1; // - идентификатор цели.
+    std::string target_name; // - имя/метка цели.
+    TargetClass target_class = TargetClass::Unknown; // - класс цели.
+    TargetSize target_size; // - физические размеры цели.
 
     // angles relative to camera optical axis (placeholder for now)
-    double azimuth_deg = 0.0; // - azimuth_deg: азимут цели относительно оси камеры.
-    double elevation_deg = 0.0; // - elevation_deg: угол возвышения цели относительно оси камеры.
+    double azimuth_deg = 0.0; // - азимут цели относительно оси камеры.
+    double elevation_deg = 0.0; // - угол возвышения цели относительно оси камеры.
 
-    double distance_m = 0.0; // - distance_m: дистанция до цели (метры).
-    double speedX_mps = 0.0; // - speedX_mps: скорость по X (м/с).
-    double speedY_mps = 0.0; // - speedY_mps: скорость по Y (м/с).
+    double distance_m = 0.0; // - дистанция до цели (метры).
+    double speedX_mps = 0.0; // - скорость по X (м/с).
+    double speedY_mps = 0.0; // - скорость по Y (м/с).
 
-    cv::Rect2f bbox; // - bbox: прямоугольник цели в кадре.
-    bool has_cross = false; // - has_cross: нужно ли рисовать прицел для цели.
-    cv::Point2f cross_center{0.0f, 0.0f}; // - cross_center: центр красного крестика.
-    int missed_frames = 0; // - missed_frames: количество пропущенных кадров.
+    cv::Rect2f bbox; // - прямоугольник цели в кадре.
+    bool has_cross = false; // - нужно ли рисовать прицел для цели.
+    cv::Point2f cross_center{0.0f, 0.0f}; // - центр красного крестика.
+    int missed_frames = 0; // - количество пропущенных кадров.
 };

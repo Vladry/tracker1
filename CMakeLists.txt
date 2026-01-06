@@ -29,21 +29,20 @@ if (NOT RKNN_INCLUDE_DIR)
 endif ()]]
 
 set(FIVE_THREADS_SOURCES
-        src/auto_detection_provider.cpp
-        src/automatic_motion_detector.cpp
+        src/motion_detector.cpp
+        src/detection_matcher.cpp
         src/display_loop.cpp
         src/auto_candidate_search.cpp
         src/frame_store.cpp
         src/main.cpp
-        src/manual_tracker_manager.cpp
-        src/manual_motion_detector.cpp
+        src/clicked_tracks_handler.cpp
+        src/clicked_target_shaper.cpp
         src/overlay.cpp
         src/rtsp_worker.cpp
-        #        src/rtsp_watch_dog.cpp
         src/static_box_manager.cpp
         src/static_target_manager.cpp
-        src/tracker_manager.cpp
-        include/automatic_motion_detector.h
+        src/tracks_manager.cpp
+        include/detection_matcher.h
 )
 
 add_executable(Five_Threads ${FIVE_THREADS_SOURCES})
