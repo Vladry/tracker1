@@ -26,11 +26,11 @@ private:
     std::vector<cv::Mat> gray_history_;
     std::deque<std::vector<cv::Point2f>> detection_history_;
     std::vector<cv::Point2f> filtered_points_;
-    int detection_iterations_ = 10;
+    int detection_iterations_ = 3; // История кадров для автодетекции движения. История используется при rebuild_filtered_points() — там все точки из истории агрегируются и кластеризуются, чтобы сгладить шум и стабилизировать точки детекций.
     float diffusion_pixels_ = 100.0f;
-    float cluster_ratio_threshold_ = 0.9f;
-    int history_size_ = 5;
-    int diff_threshold_ = 25;
+    float cluster_ratio_threshold_ = 0.8f; // это порог доли точек, которые должны попасть в один кластер, чтобы этот кластер считался устойчивой детекцией и был добавлен в filtered_points_.
+    int history_size_ = 5;  // это размер истории gray_frames кадров. Он используется для формирования diff‑кадра между первым и последним кадром в истории (gray_history_), на основе которого затем вычисляются контуры движения.
+    int diff_threshold_ = 15;
     double min_area_ = 60.0;
     int update_period_ms_ = 100;
     long long last_update_ms_ = 0;

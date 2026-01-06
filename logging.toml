@@ -3,13 +3,13 @@
 RTSP_LEVEL_LOGGER_ON = false
 
 # Логи детекции ручного клика (статическая/динамическая цель + контраст).
-MANUAL_DETECTOR_LEVEL_LOGGER = true
+MANUAL_DETECTOR_LEVEL_LOGGER = false
 
 # Логи трекера (старт, потеря, готовность к пере-захвату, пере-захват).
 TRACKER_LEVEL_LOGGER = true
 
 # Логи кликов мыши.
-MOUSE_CLICK_LOGGER = true
+MOUSE_CLICK_LOGGER = false
 
 # Лог окончания формирования образа цели.
-TARGET_OBJECT_CREATED_LOGGER = true
+TARGET_OBJECT_CREATED_LOGGER = false
