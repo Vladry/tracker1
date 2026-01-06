@@ -33,5 +33,5 @@ private:
     int history_size_ = 5;
     int diff_threshold_ = 25;
     double min_area_ = 60.0;
-    float reserved_detection_radius_ = 200.0f;
+    float reserved_detection_radius_ = 500.0f;
 };

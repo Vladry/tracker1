@@ -502,7 +502,7 @@ void ManualTrackerManager::update(cv::Mat& frame, long long now_ms) {
             cv::Rect2f candidate_bbox;
             if (it->candidate_search.update(frame, candidate_bbox)) {
                 if (log_cfg_.MANUAL_DETECTOR_LEVEL_LOGGER) {
-                    std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
+                     std::cout << "[MANUAL] auto candidate acquired id=" << it->id << std::endl;
                 }
                 it->bbox = candidate_bbox;
                 reserved_candidates_.push_back({candidate_bbox,
