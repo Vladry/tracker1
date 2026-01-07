@@ -66,7 +66,10 @@ void MotionDetector::update(const cv::Mat& frame, long long now_ms) {
     }
     last_update_ms_ = now_ms;
 
+
+    // Получаем регулярные авто-детекции точек с целями
     std::vector<cv::Point2f> points = detect_by_motion(frame);
+    // И складируем их в detection_history_
     detection_history_.push_back(std::move(points));
     while (detection_history_.size() > static_cast<size_t>(detection_iterations_)) {
         detection_history_.pop_front();

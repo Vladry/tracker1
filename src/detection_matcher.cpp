@@ -77,15 +77,20 @@ void DetectionMatcher::reset_state() {
 }
 
 // Выбирает ближайшую детекцию, игнорируя зарезервированные точки в радиусе reserved_detection_radius_.
-bool DetectionMatcher::find_nearest(const cv::Point2f& reference,
-                                    const std::vector<cv::Point2f>& points,
+bool DetectionMatcher::find_nearest(const cv::Point2f& reference, // точка потерянного трека,возле которого ищем новую детекцию
+                                    const std::vector<cv::Point2f>& points, // filtered_points_  возвращённые из detections()
                                     cv::Point2f& out_point) const {
     float best_dist = std::numeric_limits<float>::max();
     bool found = false;
     const float reserved_radius_sq = reserved_detection_radius_ * reserved_detection_radius_;
 
+    // пробегаем по точкам авто-детекции и, для каждой смотрим лежит ли она в области bbox какого-то трека:
+    int counter = 0;
     for (const auto& point : points) {
+        std::cout << std::endl<< " for point: " << counter;
         bool tracked = false;
+
+
         for (const auto& rect : tracked_boxes_) {
             if (rect.contains(point)) {
                 tracked = true;
@@ -96,6 +101,7 @@ bool DetectionMatcher::find_nearest(const cv::Point2f& reference,
             continue;
         }
 
+        // выкусывание областей точек рядом с недавно "отданной" детекцией предыдущему потерянному треку:
         bool reserved = false;
         for (const auto& reserved_point : reserved_detection_points_) {
             const float dx = point.x - reserved_point.x;
@@ -105,6 +111,7 @@ bool DetectionMatcher::find_nearest(const cv::Point2f& reference,
                 break;
             }
         }
+
         if (reserved) {
             continue;
         }
@@ -113,10 +120,12 @@ bool DetectionMatcher::find_nearest(const cv::Point2f& reference,
         const float dy = point.y - reference.y;
         const float dist = std::sqrt(dx * dx + dy * dy);
         if (dist < best_dist) {
+            std::cout << "    best_dist = " << dist;
             best_dist = dist;
             out_point = point;
             found = true;
         }
+        counter++;
     }
 
     return found;
@@ -129,6 +138,7 @@ bool DetectionMatcher::find_best_candidate(int cx, int cy, cv::Point2f& out_poin
 
     // Берём актуальный пул детекций из MotionDetector и ищем ближайшую к reference.
     const cv::Point2f reference(static_cast<float>(cx), static_cast<float>(cy));
+    // просто записывает filtered_points_ в detections
     const std::vector<cv::Point2f>& detections = motion_detector_->detections();
     if (detections.empty()) {
         return false;
