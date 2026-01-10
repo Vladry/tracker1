@@ -64,9 +64,9 @@ public:
     // Создаёт менеджер ручного трекинга и загружает конфигурацию из TOML.
     explicit ClickedTracksHandler(const toml::table& tbl);
 
-    // Обновляет активные ручные треки и синхронизирует список целей.
+    // Обновляет активные кликнутые мышью треки и синхронизирует список целей.
     void update(cv::Mat& frame, long long now_ms);
-    // Обрабатывает клик мыши и создаёт/удаляет ручную цель.
+    // Обрабатывает клик мыши и создаёт/удаляет кликнутую мышью цель.
     bool handle_click(int x, int y, const cv::Mat& frame, long long now_ms);
     // Возвращает текущее представление целей для рендера/выдачи.
     const std::vector<Target>& targets() const { return targets_; }
@@ -100,7 +100,7 @@ private:
     std::vector<ClickedTrack> tracks_; // - список активных треков.
     std::vector<Target> targets_; // - список целей для выдачи наружу.
     std::vector<PendingClick> pending_clicks_; // - клики, ожидающие подтверждения движения.
-    std::vector<ReservedCandidate> reserved_candidates_; // - временные резервы кандидатов.
+    std::vector<ReservedCandidate> reserved_candidates_; // - детекции_кандидаты, временно закреплённые за треками которым их выдали.
     int next_id_ = 1; // - счётчик id целей.
     std::mutex mutex_; // - защита данных от конкурентного доступа.
     cv::Mat flood_fill_overlay_; // - визуальный оверлей зоны движения.

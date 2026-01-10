@@ -370,15 +370,24 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
     // Цикл: собирает bbox видимых треков для фильтрации кандидатов автопоиска.
     for (const auto& track : tracks_) {
         if (track.lost_since_ms == 0) {
-            tracked_boxes.push_back(track.bbox);
+            tracked_boxes.push_back(track.bbox); //tracked_boxes - зеленые ббоксы
         }
     }
+
+
+// Этот фрагмент — классическая erase–remove идиома для удаления элементов из std::vector по условию.
     reserved_candidates_.erase(
+            // remove_if -проходит по reserved_candidates_ и перемещает все элементы, для которых условие лямбды ложно, в начало диапазона
+            //Лямбда возвращает true, когда кандидат просрочен (candidate.expires_ms <= now_ms).
+            //Эти «плохие» элементы сдвигаются в конец, но размер вектора не меняется.
+            //reserved_candidates_.erase(new_end, reserved_candidates_.end())  - фактически удаляет хвостовой диапазон «просроченных» элементов, который пометил remove_if.
             std::remove_if(reserved_candidates_.begin(), reserved_candidates_.end(),
                            [&](const ReservedCandidate& candidate) {
                                return candidate.expires_ms <= now_ms;
                            }),
             reserved_candidates_.end());
+// после выполнения в reserved_candidates_ остаются только кандидаты, у которых expires_ms > now_ms (то есть ещё «живые»).
+
 
     if (!pending_clicks_.empty()) {
         cv::Mat gray = current_gray;
