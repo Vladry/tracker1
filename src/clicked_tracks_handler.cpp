@@ -8,13 +8,13 @@
 namespace {
     // Возвращает центр прямоугольника.
     // Используется для запоминания последней позиции цели.
-    static inline cv::Point2f rect_center(const cv::Rect2f& rect) {
+    static inline cv::Point2f rect_center(const cv::Rect2f &rect) {
         return {rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f};
     }
 
     // Переводит прямоугольник с float координатами в int, округляя границы.
     // Нужен для отрисовки и операций с матрицами масок.
-    static inline cv::Rect to_int_rect(const cv::Rect2f& rect) {
+    static inline cv::Rect to_int_rect(const cv::Rect2f &rect) {
         return cv::Rect(
                 static_cast<int>(std::round(rect.x)),
                 static_cast<int>(std::round(rect.y)),
@@ -25,7 +25,7 @@ namespace {
 
     // Переводит кадр в градации серого, если он в формате BGR.
     // Клонирует кадр, чтобы не модифицировать исходные данные.
-    static inline cv::Mat to_gray(const cv::Mat& frame) {
+    static inline cv::Mat to_gray(const cv::Mat &frame) {
         if (frame.channels() == 3) {
             cv::Mat gray;
             cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
@@ -36,7 +36,7 @@ namespace {
 
     // Обрезает прямоугольник по размеру кадра, исключая отрицательные координаты.
     // Гарантирует корректный bbox перед передчей трекеру или рендереру.
-    static inline cv::Rect2f clip_rect(const cv::Rect2f& rect, const cv::Size& size) {
+    static inline cv::Rect2f clip_rect(const cv::Rect2f &rect, const cv::Size &size) {
         float x1 = std::max(0.0f, rect.x);
         float y1 = std::max(0.0f, rect.y);
         float x2 = std::min(rect.x + rect.width, static_cast<float>(size.width));
@@ -60,7 +60,7 @@ namespace {
 
 
 // Конструктор: поднимает логирование и загружает настройки ручного трекера.
-ClickedTracksHandler::ClickedTracksHandler(const toml::table& tbl) {
+ClickedTracksHandler::ClickedTracksHandler(const toml::table &tbl) {
     load_logging_config(tbl, log_cfg_);
     load_config(tbl);
     ClickedTargetShaperConfig motion_cfg;
@@ -96,7 +96,7 @@ ClickedTracksHandler::ClickedTracksHandler(const toml::table& tbl) {
 
 // Згружает параметры ручного трекера из TOML и печатает краткую сводку.
 // Любая ошибка в таблице [manual_tracker] приводит к исключению и сообщению в лог.
-bool ClickedTracksHandler::load_config(const toml::table& tbl) {
+bool ClickedTracksHandler::load_config(const toml::table &tbl) {
     try {
         const auto *cfg = tbl["manual_tracker"].as_table();
         if (!cfg) {
@@ -151,7 +151,7 @@ bool ClickedTracksHandler::load_config(const toml::table& tbl) {
         cfg_.RESERVED_CANDIDATE_TTL_MS = std::max(0, cfg_.RESERVED_CANDIDATE_TTL_MS);
         cfg_.AUTO_DETECTION_PERIOD_MS = std::max(1, cfg_.AUTO_DETECTION_PERIOD_MS);
         return true;
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "[MANUAL] config load failed: " << e.what() << std::endl;
         return false;
     }
@@ -159,14 +159,14 @@ bool ClickedTracksHandler::load_config(const toml::table& tbl) {
 
 // Проверяет попадание клика в bbox с расширением по краям.
 // Нужна для логики "клик по зелёному боксу удаляет цель".
-bool ClickedTracksHandler::point_in_rect_with_padding(const cv::Rect2f& rect, int x, int y, int pad) const {
+bool ClickedTracksHandler::point_in_rect_with_padding(const cv::Rect2f &rect, int x, int y, int pad) const {
     cv::Rect2f padded(rect.x - pad, rect.y - pad, rect.width + pad * 2.0f, rect.height + pad * 2.0f);
     return padded.contains(cv::Point2f(static_cast<float>(x), static_cast<float>(y)));
 }
 
 // Записывает видимость трека в кольцевую историю последних N кадров.
 // Это ядр правила "N кадров без обновления -> показать серый bbox".
-void ClickedTracksHandler::record_visibility(ClickedTrack& track, bool visible) {
+void ClickedTracksHandler::record_visibility(ClickedTrack &track, bool visible) {
     const size_t history_size = track.visibility_history.size();
     if (history_size == 0) {
         return;
@@ -177,7 +177,7 @@ void ClickedTracksHandler::record_visibility(ClickedTrack& track, bool visible) 
 
 // Проверяет, что трек не был виден в последних N кадрах.
 // Возвращает true, когда цель считается потерянной для отрисовки.
-bool ClickedTracksHandler::has_recent_visibility_loss(const ClickedTrack& track) const {
+bool ClickedTracksHandler::has_recent_visibility_loss(const ClickedTrack &track) const {
     if (track.visibility_history.empty()) {
         return false;
     }
@@ -195,9 +195,9 @@ bool ClickedTracksHandler::has_recent_visibility_loss(const ClickedTrack& track)
 //Оптический поток рассчитывается в ROI. Усредняется направление движения.
 //Считается доля пикселей, чьи векторы движения совпадают по направлению с усреднённым.
 //Если доля меньше заданного порога — считается, что движения нет.
-bool ClickedTracksHandler::has_group_motion(const cv::Mat& prev_gray,
-                                            const cv::Mat& curr_gray,
-                                            const cv::Rect2f& roi) const {
+bool ClickedTracksHandler::has_group_motion(const cv::Mat &prev_gray,
+                                            const cv::Mat &curr_gray,
+                                            const cv::Rect2f &roi) const {
     if (prev_gray.empty() || curr_gray.empty()) {
         return false;
     }
@@ -228,7 +228,7 @@ bool ClickedTracksHandler::has_group_motion(const cv::Mat& prev_gray,
     double sum_dy = 0.0;
     int moving_pixels = 0;
     for (int y = 0; y < flow.rows; ++y) {
-        const auto* row = flow.ptr<cv::Vec2f>(y);
+        const auto *row = flow.ptr<cv::Vec2f>(y);
         for (int x = 0; x < flow.cols; ++x) {
             const cv::Vec2f vec = row[x];
             const float mag = std::hypot(vec[0], vec[1]);
@@ -254,7 +254,7 @@ bool ClickedTracksHandler::has_group_motion(const cv::Mat& prev_gray,
     const double cos_tol = std::cos(cfg_.WATCHDOG_ANGLE_TOLERANCE_DEG * CV_PI / 180.0);
     int aligned_pixels = 0;
     for (int y = 0; y < flow.rows; ++y) {
-        const auto* row = flow.ptr<cv::Vec2f>(y);
+        const auto *row = flow.ptr<cv::Vec2f>(y);
         for (int x = 0; x < flow.cols; ++x) {
             const cv::Vec2f vec = row[x];
             const float mag = std::hypot(vec[0], vec[1]);
@@ -274,7 +274,7 @@ bool ClickedTracksHandler::has_group_motion(const cv::Mat& prev_gray,
 
 
 // Метод перевода трека в состояние потери цели. Работает совместно с has_group_motion
-void ClickedTracksHandler::mark_track_lost(ClickedTrack& track, long long now_ms) {
+void ClickedTracksHandler::mark_track_lost(ClickedTrack &track, long long now_ms) {
     track.lost_since_ms = now_ms;
     if (track.visibility_history.empty()) {
         track.visibility_history.assign(static_cast<size_t>(cfg_.VISIBILITY_HISTORY_SIZE), false);
@@ -296,7 +296,7 @@ void ClickedTracksHandler::mark_track_lost(ClickedTrack& track, long long now_ms
 
 // Создаёт экземпляр OpenCV-трекера на основе настроек.
 // Поддерживает KCF и CSRT.
-cv::Ptr<cv::Tracker> ClickedTracksHandler::create_tracker() const {
+cv::Ptr <cv::Tracker> ClickedTracksHandler::create_tracker() const {
     std::string type = cfg_.TRACKER_TYPE;
     std::transform(type.begin(), type.end(), type.begin(), [](unsigned char ch) {
         return static_cast<char>(std::toupper(ch));
@@ -309,9 +309,9 @@ cv::Ptr<cv::Tracker> ClickedTracksHandler::create_tracker() const {
 
 // Обработчик ЛКМ: удаляет цель по клику по bbox или инициирует новую.
 // Клик по пустому месту создаёт PendingClick для анализа движения.
-bool ClickedTracksHandler::handle_click(int x, int y, const cv::Mat& frame, long long now_ms) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    (void)now_ms;
+bool ClickedTracksHandler::handle_click(int x, int y, const cv::Mat &frame, long long now_ms) {
+    std::lock_guard <std::mutex> lock(mutex_);
+    (void) now_ms;
 
     // Сначала проверяем, не кликнули ли по существующему боксу — тогда удаляем цель.
     // Цикл: ищет первый трек, чей bbox покрывает клик (с паддингом), и удаляет его.
@@ -351,8 +351,8 @@ bool ClickedTracksHandler::handle_click(int x, int y, const cv::Mat& frame, long
 
 // Основной цикл обновления: обрабатывает pending-клики, треки и выводит Target-ы.
 // Здесь же формируется логика "N кадров без обновления -> серый bbox".
-void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
-    std::lock_guard<std::mutex> lock(mutex_);
+void ClickedTracksHandler::update(cv::Mat &frame, long long now_ms) {
+    std::lock_guard <std::mutex> lock(mutex_);
 
     if (frame.empty()) {
         refresh_targets();
@@ -365,10 +365,11 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
     const bool should_run_watchdog = !watchdog_prev_gray_.empty()
                                      && (now_ms - watchdog_prev_ms_ >= cfg_.WATCHDOG_PERIOD_MS);
 
-    std::vector<cv::Rect2f> tracked_boxes;
-    tracked_boxes.reserve(tracks_.size());
+    std::vector <cv::Rect2f> tracked_boxes; // bbox видимых треков; используются как список запрета для выбора кандидатов.
+    tracked_boxes.reserve(
+            tracks_.size()); // резервируем место под bbox всех видимых треков, чтобы избежать реаллокаций.
     // Цикл: собирает bbox видимых треков для фильтрации кандидатов автопоиска.
-    for (const auto& track : tracks_) {
+    for (const auto &track: tracks_) {
         if (track.lost_since_ms == 0) {
             tracked_boxes.push_back(track.bbox); //tracked_boxes - зеленые ббоксы
         }
@@ -382,7 +383,7 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
             //Эти «плохие» элементы сдвигаются в конец, но размер вектора не меняется.
             //reserved_candidates_.erase(new_end, reserved_candidates_.end())  - фактически удаляет хвостовой диапазон «просроченных» элементов, который пометил remove_if.
             std::remove_if(reserved_candidates_.begin(), reserved_candidates_.end(),
-                           [&](const ReservedCandidate& candidate) {
+                           [&](const ReservedCandidate &candidate) {
                                return candidate.expires_ms <= now_ms;
                            }),
             reserved_candidates_.end());
@@ -394,7 +395,7 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
         // Цикл: дополняет историю кадров для pending-кликов и, при готовности,
         //       пытается создать трек на основе движения в ROI.
         // Цепочка 1: клик → накопление кадров → clicked_target_shaper_ → bbox для трекера.
-        for (auto it = pending_clicks_.begin(); it != pending_clicks_.end(); ) {
+        for (auto it = pending_clicks_.begin(); it != pending_clicks_.end();) {
             it->gray_frames.push_back(gray);
             // Цепочка 1: подтверждение клика оператором и формирование bbox.
             const int required = clicked_target_shaper_.required_frames();
@@ -408,7 +409,7 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
                 continue;
             }
 
-            std::vector<cv::Point2f> motion_points;
+            std::vector <cv::Point2f> motion_points;
             cv::Rect2f motion_roi;
             cv::Rect2f tracker_roi;
             if (clicked_target_shaper_.build_candidate(it->gray_frames, it->roi, frame.size(),
@@ -447,12 +448,12 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
                     flood_fill_mask_ = cv::Mat::zeros(frame.size(), CV_8UC1);
                     flood_fill_overlay_ = cv::Mat::zeros(frame.size(), frame.type());
                     if (motion_points.size() >= 3) {
-                        std::vector<cv::Point2f> hull;
+                        std::vector <cv::Point2f> hull;
                         cv::convexHull(motion_points, hull, true);
-                        std::vector<cv::Point> hull_int;
+                        std::vector <cv::Point> hull_int;
                         hull_int.reserve(hull.size());
                         // Цикл: переводит точки hull в целочисленные координаты маски заливк.
-                        for (const auto& pt : hull) {
+                        for (const auto &pt: hull) {
                             hull_int.emplace_back(static_cast<int>(std::round(pt.x)),
                                                   static_cast<int>(std::round(pt.y)));
                         }
@@ -484,25 +485,41 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
     }
 
     // Цикл: обновляет все активные треки (OpenCV-трекер, потери, автопоиск кандидатов).
-    for (auto it = tracks_.begin(); it != tracks_.end(); ) {
-        std::vector<cv::Rect2f> reserved_boxes = tracked_boxes;
+    for (auto it = tracks_.begin(); it != tracks_.end();) {
+// tracked_boxes — список bbox видимых треков (не потерянных) (lost_since_ms == 0) треков.
+// Этот список нужен, чтобы при поиске кандидата исключать точки, уже находящиеся внутри активных треков.
+// эти bbox используются для фильтрации кандидатов и не должны попадать в новый поиск.
+        std::vector <cv::Rect2f> reserved_boxes = tracked_boxes;
+// предварительное резервирование памяти под bbox видимых треков, чтобы избежать лишних реаллокаций при push_back.
         reserved_boxes.reserve(tracked_boxes.size() + reserved_candidates_.size());
-        for (const auto& candidate : reserved_candidates_) {
+
+
+// в этом цикле для каждого трека it, в reserved_candidates_ добавляются все незаэкспайреные кандидаты недавно выданные текущему треку
+        for (const auto &candidate: reserved_candidates_) {
             if (candidate.owner_id == it->id) {
                 continue;
             }
             reserved_boxes.push_back(candidate.bbox);
         }
-        it->candidate_search.set_tracked_boxes(reserved_boxes);
-        std::vector<cv::Point2f> reserved_points;
-        reserved_points.reserve(reserved_candidates_.size());
-        for (const auto& candidate : reserved_candidates_) {
+
+/* reserved_candidates_ — вектор структур {bbox, expires_ms, owner_id}, то есть кандидаты, закреплённые за конкретными треками на TTL. Используется как механизм блокировки, чтобы один и тот же кандидат не отдавался другим трекам одновременно.
+   Для каждого трека строятся локальные reserved_boxes и reserved_points, и они передаются в AutoCandidateSearch.
+
+*/      it->candidate_search.set_tracked_boxes(reserved_boxes);
+        std::vector <cv::Point2f> reserved_points; // центры зарезервированных кандидатов (запрещены в радиусе reserved_detection_radius_).
+        reserved_points.reserve(
+                reserved_candidates_.size()); // резервируем место под центры всех зарезервированных кандидатов.
+        for (const auto &candidate: reserved_candidates_) {
             if (candidate.owner_id == it->id) {
                 continue;
             }
-            reserved_points.push_back(rect_center(candidate.bbox));
+            reserved_points.push_back(
+                    rect_center(candidate.bbox)); // фиксируем центр кандидата для запрета соседних детекций.
         }
-        it->candidate_search.set_reserved_detection_points(reserved_points);
+/* В эти списки включаются bbox/центры резервов других треков, а собственный резерв конкретного трека исключается.
+Так достигается блокировка кандидатов для всех остальных треков.
+*/        it->candidate_search.set_reserved_detection_points(reserved_points);
+
         bool visible = false;
         const cv::Rect2f prev_bbox = it->bbox;
         if (it->lost_since_ms == 0 && !frame.empty() && it->tracker) {
@@ -538,6 +555,8 @@ void ClickedTracksHandler::update(cv::Mat& frame, long long now_ms) {
             }
         }
 
+// ЗАПУСК ПОИСКА КАНДИДАТА на перезахват
+        // вот блок запуска поиска кандидатов при потере треком цели (трек посерел)
         if (it->lost_since_ms > 0) {
             // Цепочка 2: потеря → AutoCandidateSearch → DetectionMatcher → пул MotionDetector.
             if (!it->candidate_search.active()) {
@@ -595,7 +614,7 @@ void ClickedTracksHandler::refresh_targets() {
     targets_.clear();
     targets_.reserve(tracks_.size());
     // Цикл: преобразует внутренние треки в Target для отрисовки/экспорта.
-    for (const auto& tr : tracks_) {
+    for (const auto &tr: tracks_) {
         Target tg;
         tg.id = tr.id;
         tg.target_name = "T" + std::to_string(tr.id);
